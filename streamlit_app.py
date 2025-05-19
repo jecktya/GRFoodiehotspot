@@ -1,6 +1,6 @@
 import streamlit as st
-from streamlit.components.v1 import html
 
+# 이미지 카테고리 정의
 category_images = {
     "전체": "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/all.jpg",
     "한식": "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/korean.jpg",
@@ -14,32 +14,32 @@ category_images = {
 if "selected_category" not in st.session_state:
     st.session_state.selected_category = "전체"
 
-# 숨겨진 입력 필드 - JS에서 값 업데이트
-category_selected = st.text_input("선택된 카테고리", st.session_state.selected_category, label_visibility="collapsed")
-if category_selected and category_selected != st.session_state.selected_category:
-    st.session_state.selected_category = category_selected
+st.markdown("### 🍽️ 음식 종류를 선택하세요")
 
-# JS 클릭 핸들러 삽입
-st.components.v1.html(f"""
-<script>
-function setCategory(category) {{
-    const input = window.parent.document.querySelector('input[data-testid="stTextInput"]');
-    if (input) {{
-        input.value = category;
-        input.dispatchEvent(new Event('input', {{ bubbles: true }}));
-    }}
-}}
-</script>
+# 이미지 버튼을 컬럼으로 나열
+cols = st.columns(len(category_images))
 
-<div style="display: flex; overflow-x: auto; gap: 12px; padding-bottom: 10px;">
-    {''.join(f'''
-    <div onclick="setCategory('{cat}')" style="cursor: pointer; text-align: center;">
-        <img src="{url}" style="width: 120px; border-radius: 10px;
-        border: {'4px solid #4CAF50' if cat == st.session_state.selected_category else '2px solid transparent'};
-        box-shadow: 0 2px 6px rgba(0,0,0,0.15); transition: 0.2s;">
-        <div style="margin-top: 4px; font-weight: bold;">{cat}</div>
-    </div>''' for cat, url in category_images.items())}
-</div>
-""", height=190)
+for idx, (label, url) in enumerate(category_images.items()):
+    with cols[idx]:
+        # 버튼처럼 보이는 이미지 + 클릭 시 선택값 변경
+        if st.button(f" ", key=f"btn_{label}"):  # 유니코드 공백으로 버튼 텍스트 숨김
+            st.session_state.selected_category = label
+
+        # 선택된 항목은 강조 테두리
+        selected_style = (
+            "border:4px solid #4CAF50; border-radius:10px; box-shadow:0 0 10px rgba(76,175,80,0.5);"
+            if st.session_state.selected_category == label else
+            "border:1px solid transparent; border-radius:10px;"
+        )
+
+        st.markdown(
+            f"""
+            <div style="{selected_style} padding:3px;">
+                <img src="{url}" width="100%" style="border-radius:10px;">
+                <div style="text-align:center; font-weight:bold; margin-top:5px;">{label}</div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
 
 st.markdown(f"### 🍱 현재 선택된 음식: **{st.session_state.selected_category}**")
