@@ -59,4 +59,4 @@ for idx, (label, url) in enumerate(category_images.items()):
         """, unsafe_allow_html=True)
 
 # 선택 결과 출력
-st.markdown(f"### 🍱 현재 선택된 음식: **{**
+st.markdown(f"### 🍱 현재 선택된 음식: **{st.session_state.selected_category}**")
