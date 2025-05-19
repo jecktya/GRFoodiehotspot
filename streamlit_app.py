@@ -1,6 +1,6 @@
 import streamlit as st
+from streamlit.components.v1 import html
 
-# 이미지 데이터
 category_images = {
     "전체": "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/all.jpg",
     "한식": "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/korean.jpg",
@@ -11,62 +11,40 @@ category_images = {
     "카페/디저트": "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/dessert.jpg"
 }
 
-# 상태 초기화
 if "selected_category" not in st.session_state:
     st.session_state.selected_category = "전체"
 
+# 숨은 입력 필드 (상호작용용)
+selected = st.text_input("선택된 카테고리", st.session_state.selected_category, label_visibility="collapsed")
+if selected and selected != st.session_state.selected_category:
+    st.session_state.selected_category = selected
+
+# JS + HTML 통합 구성
+html_code = """
+<script>
+function setCategory(cat) {
+    const input = window.parent.document.querySelector('input[data-testid="stTextInput"]');
+    if (input) {
+        input.value = cat;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+}
+</script>
+<div style="display:flex; gap:12px; overflow-x:auto; padding:8px 0;">
+"""
+
+for label, img in category_images.items():
+    border = "#4CAF50" if label == st.session_state.selected_category else "transparent"
+    html_code += f"""
+    <div onclick="setCategory('{label}')" style="text-align:center; cursor:pointer;">
+        <img src="{img}" style="width:120px; border-radius:10px;
+             border: 4px solid {border}; box-shadow: 0 2px 6px rgba(0,0,0,0.1); transition: 0.2s;">
+        <div style="margin-top:5px; font-weight:bold;">{label}</div>
+    </div>
+    """
+
+html_code += "</div>"
+
 st.markdown("### 🍽️ 음식 종류를 선택하세요")
-
-# CSS: 완전한 버튼 대체 (이미지를 눌렀을 때만 반응 + 강조 효과)
-st.markdown("""
-    <style>
-    .cat-container {
-        display: flex;
-        overflow-x: auto;
-        gap: 16px;
-        padding: 10px 0;
-    }
-    .cat-form {
-        display: inline-block;
-        border: none;
-        background: none;
-    }
-    .cat-img {
-        width: 120px;
-        border-radius: 10px;
-        border: 3px solid transparent;
-        transition: transform 0.2s ease;
-    }
-    .cat-img:hover {
-        transform: scale(1.05);
-        cursor: pointer;
-        box-shadow: 0 0 10px rgba(0,0,0,0.15);
-    }
-    .selected {
-        border-color: #4CAF50 !important;
-        box-shadow: 0 0 12px rgba(76,175,80,0.6);
-        transform: scale(1.08);
-    }
-    </style>
-""", unsafe_allow_html=True)
-
-# 가로 스크롤 UI
-st.markdown('<div class="cat-container">', unsafe_allow_html=True)
-
-# 이미지가 곧 버튼
-for cat, img_url in category_images.items():
-    is_selected = st.session_state.selected_category == cat
-    css_class = "cat-img selected" if is_selected else "cat-img"
-
-    with st.form(f"form_{cat}"):
-        submitted = st.form_submit_button(
-            label=f"""<img src="{img_url}" class="{css_class}"><div style='text-align:center; font-weight:bold; margin-top:4px;'>{cat}</div>""",
-            use_container_width=False
-        )
-        if submitted:
-            st.session_state.selected_category = cat
-
-st.markdown("</div>", unsafe_allow_html=True)
-
-# 선택 결과 표시
+html(html_code, height=190)
 st.markdown(f"### 🍱 현재 선택된 음식: **{st.session_state.selected_category}**")
