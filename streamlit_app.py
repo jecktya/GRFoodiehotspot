@@ -4,11 +4,11 @@ import re
 from datetime import datetime
 from urllib.parse import quote
 
-# 👉 네이버 API 인증 정보 (여기 입력하세요)
-NAVER_CLIENT_ID = "YOUR_CLIENT_ID"
-NAVER_CLIENT_SECRET = "YOUR_CLIENT_SECRET"
+# ✅ NAVER API 인증 정보 (Streamlit secrets에서 불러오기)
+NAVER_CLIENT_ID = st.secrets["naver"]["client_id"]
+NAVER_CLIENT_SECRET = st.secrets["naver"]["client_secret"]
 
-# 🔍 지역 검색
+# 🔍 네이버 지역 검색
 def search_restaurants(query, display=5):
     url = "https://openapi.naver.com/v1/search/local.json"
     headers = {
@@ -25,7 +25,8 @@ def search_restaurants(query, display=5):
     if response.status_code == 200:
         return response.json()["items"]
     else:
-        st.error("맛집 정보를 불러오는 데 실패했습니다.")
+        st.error(f"❌ 네이버 API 호출 실패 - 상태 코드: {response.status_code}")
+        st.text(response.text)
         return []
 
 # 📝 블로그 후기 검색
@@ -64,28 +65,25 @@ def search_images(query, display=1):
         return response.json()["items"]
     return []
 
-# 현재 점심시간 여부 판단 (11:00 ~ 14:00 기준)
+# ✅ 점심시간 판단 (11:00~14:00)
 def is_lunch_open_now():
     now = datetime.now().time()
     return datetime.strptime("11:00", "%H:%M").time() <= now <= datetime.strptime("14:00", "%H:%M").time()
 
-# 👉 Streamlit UI 시작
+# 👉 Streamlit UI
 st.title("🍱 계룡시 점심 맛집 추천기")
 
-# 음식 카테고리 선택
 main_category = st.selectbox(
     "음식 종류 선택",
     ["한식", "중식", "일식", "양식", "분식", "카페/디저트"],
     key="main_category"
 )
 
-# 세부 메뉴 입력
 sub_category = st.text_input(
     "세부 메뉴 (예: 김치찌개, 파스타 등)",
     key="sub_category"
 )
 
-# 검색 버튼 클릭 시
 if st.button("맛집 검색", key="search_button"):
     query = f"계룡시 {main_category} {sub_category} 맛집"
     st.write(f"🔍 검색어: {query}")
@@ -101,7 +99,6 @@ if st.button("맛집 검색", key="search_button"):
         st.write(f"📍 주소: {address}")
         st.markdown(f"🗺️ [네이버 지도에서 보기]({map_url})")
 
-        # 점심시간 운영 여부
         if is_lunch_open_now():
             st.success("✅ 현재 점심시간 운영 중")
         else:
@@ -110,7 +107,7 @@ if st.button("맛집 검색", key="search_button"):
         st.write(f"📞 전화번호: {item['telephone'] or '정보 없음'}")
         st.write(f"🔗 [홈페이지로 이동]({item['link']})")
 
-        # 공유 링크 복사용 텍스트 입력
+        # 공유용 링크 복사 UI
         st.text_input("📋 카카오톡 공유할 링크 복사", value=map_url, key=f"share_link_{i}")
 
         # 이미지 표시
