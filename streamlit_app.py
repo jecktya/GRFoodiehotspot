@@ -1,50 +1,31 @@
 import streamlit as st
-from streamlit.components.v1 import html
 
+# 이미지 + 이름 정의
 category_images = {
-    "전체": "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/all.jpg",
-    "한식": "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/korean.jpg",
-    "중식": "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/chinese.jpg",
-    "일식": "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/japanese.jpg",
-    "양식": "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/western.jpg",
-    "분식": "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/snack.jpg",
-    "카페/디저트": "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/dessert.jpg"
+    "전체": "https://.../all.jpg",
+    "한식": "https://.../korean.jpg",
+    "중식": "https://.../chinese.jpg",
+    # 생략
 }
 
-# 콤보 UI
-category = st.selectbox("🍱 콤보로 선택하기", list(category_images.keys()), key="combo")
+if "selected_category" not in st.session_state:
+    st.session_state.selected_category = "전체"
 
-# 이미지 클릭 시 자바스크립트로 콤보 선택
-html_code = """
-<script>
-function selectCategory(cat) {
-    const selects = window.parent.document.querySelectorAll('select');
-    selects.forEach(combo => {
-        for (let i = 0; i < combo.options.length; i++) {
-            if (combo.options[i].text === cat) {
-                combo.selectedIndex = i;
-                combo.dispatchEvent(new Event('change', { bubbles: true }));
-                break;
-            }
-        }
-    });
-}
-</script>
-<div style="display:flex; gap:16px; overflow-x:auto; padding-top:12px;">
-"""
+# 콤보와 공유되는 상태
+current = st.session_state.selected_category
+new_selected = st.selectbox("🍱 콤보로 선택하기", list(category_images.keys()), index=list(category_images.keys()).index(current))
+if new_selected != st.session_state.selected_category:
+    st.session_state.selected_category = new_selected
 
-for label, img_url in category_images.items():
-    html_code += f"""
-    <div onclick="selectCategory('{label}')" style="text-align:center; cursor:pointer;">
-        <img src="{img_url}" style="width:100px; border-radius:10px; border:2px solid #ccc;">
-        <div style="margin-top:4px;">{label}</div>
-    </div>
-    """
+# 이미지 UI (form으로 감싸 클릭 처리)
+cols = st.columns(len(category_images))
+for i, (label, url) in enumerate(category_images.items()):
+    with cols[i]:
+        with st.form(f"form_{label}"):
+            st.image(url, caption=label, use_container_width=True)
+            if st.form_submit_button("선택"):
+                st.session_state.selected_category = label
+                st.experimental_rerun()
 
-html_code += "</div>"
-
-st.markdown("### 🖱️ 아래 이미지를 클릭하면 콤보 선택이 바뀝니다")
-html(html_code, height=230)
-
-# 결과 표시
-st.success(f"✅ 현재 선택된 음식 종류: **{category}**")
+# 선택값 출력
+st.markdown(f"### ✅ 선택된 항목: **{st.session_state.selected_category}**")
