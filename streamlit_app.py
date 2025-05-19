@@ -10,64 +10,28 @@ category_images = {
     "카페/디저트": "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/dessert.jpg"
 }
 
-if "selected_category" not in st.session_state:
-    st.session_state.selected_category = "전체"
+# 선택된 카테고리 유지
+selected_category = st.radio(
+    "🍽️ 음식 종류를 선택하세요",
+    list(category_images.keys()),
+    horizontal=True
+)
 
-st.markdown("""
-    <style>
-    .cat-img {
-        border: 4px solid transparent;
-        border-radius: 14px;
-        margin-bottom: 10px;
-        transition: 0.15s all;
-        box-shadow: 0 1px 6px rgba(0,0,0,0.10);
-    }
-    .cat-img.selected {
-        border-color: #4CAF50 !important;
-        box-shadow: 0 0 18px rgba(76,175,80,0.19);
-        transform: scale(1.07);
-    }
-    .cat-btn {
-        margin-top: -12px;
-        margin-bottom: 6px;
-        width: 100%;
-        font-size: 1em;
-        font-weight: bold;
-        border-radius: 7px;
-        border: 2px solid #e0e0e0;
-        background: #f6fff6;
-        color: #232323;
-        transition: 0.13s;
-    }
-    .cat-btn.selected {
-        border-color: #4CAF50;
-        background: #E7FCEB;
-        color: #249a3a;
-    }
-    </style>
-""", unsafe_allow_html=True)
-
-st.markdown("### 🍽️ 음식 종류를 선택하세요")
-
+# 그림+선택 강조 렌더링
 cols = st.columns(len(category_images))
 for i, (label, url) in enumerate(category_images.items()):
     with cols[i]:
-        selected = st.session_state.selected_category == label
-        # 그림: 캡션 없이
+        border = "4px solid #4CAF50" if label == selected_category else "3px solid #e0e0e0"
         st.markdown(
-            f'<img src="{url}" class="cat-img{" selected" if selected else ""}"/>',
+            f'<img src="{url}" style="width:110px;border-radius:12px;border:{border};margin-bottom:4px;box-shadow:0 1px 6px rgba(0,0,0,0.09);" />',
             unsafe_allow_html=True
         )
-        # 버튼: 라벨 표시, 선택되면 스타일 적용
-        btn = st.button(
-            label,
-            key=f"catbtn_{label}",
-            help=f"{label} 카테고리 선택",
+        st.markdown(
+            f"<div style='text-align:center;font-weight:bold;'>{label}</div>",
+            unsafe_allow_html=True
         )
-        if btn:
-            st.session_state.selected_category = label
 
 st.markdown(
-    f"<div style='text-align:center; margin-top:18px;'><b style='color:#4CAF50; font-size:1.3em'>✔ {st.session_state.selected_category} 선택됨</b></div>",
+    f"<div style='text-align:center; margin-top:18px;'><b style='color:#4CAF50; font-size:1.3em'>✔ {selected_category} 선택됨</b></div>",
     unsafe_allow_html=True
 )
