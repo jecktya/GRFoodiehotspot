@@ -48,7 +48,6 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# 렌더링: form + image = 버튼
 html_block = '<div class="image-form-container">'
 for label, url in category_images.items():
     selected_class = "selected" if label == st.session_state.selected_category else ""
@@ -62,11 +61,10 @@ for label, url in category_images.items():
     """
 html_block += "</div>"
 
-# 수동 처리 (Streamlit이 POST form 값을 자동으로 처리하지 않기 때문)
-selected = st.experimental_get_query_params().get("select", [None])[0]
+# 쿼리 파라미터 최신 방식으로
+selected = st.query_params.get("select", [None])[0]
 if selected in category_images:
     st.session_state.selected_category = selected
 
-# 렌더링
 st.components.v1.html(html_block, height=250)
 st.markdown(f"### ✅ 현재 선택된 음식: **{st.session_state.selected_category}**")
