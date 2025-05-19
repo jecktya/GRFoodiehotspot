@@ -10,30 +10,38 @@ category_images = {
     "카페/디저트": "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/dessert.jpg"
 }
 
-# 이미지+텍스트 HTML로 묶기
-options = []
-for label, url in category_images.items():
-    options.append(f'<img src="{url}" width="120"><br><span style="font-weight:bold">{label}</span>')
+if "selected_category" not in st.session_state:
+    st.session_state.selected_category = "전체"
 
-# 초기값 세팅
-default_idx = list(category_images.keys()).index(st.session_state.get("selected_category", "전체"))
+st.markdown("""
+    <style>
+    .selected-cat {
+        border: 4px solid #4CAF50 !important;
+        box-shadow: 0 0 12px rgba(76,175,80,0.15);
+        border-radius: 12px;
+        margin-bottom: 2px;
+        transition: 0.18s all;
+    }
+    .cat-img {
+        border: 3px solid #e0e0e0;
+        border-radius: 12px;
+        margin-bottom: 2px;
+        transition: 0.15s all;
+    }
+    </style>
+""", unsafe_allow_html=True)
 
-# radio로 그림+텍스트 한 줄
-choice = st.radio(
-    "🍽️ 음식 종류를 선택하세요",
-    options,
-    index=default_idx,
-    format_func=lambda x: "",  # 옵션 텍스트 숨김
-)
+st.markdown("### 🍽️ 음식 종류를 선택하세요")
 
-# 선택값 다시 변환 (radio는 str 그대로 반환)
-selected_idx = options.index(choice)
-selected_label = list(category_images.keys())[selected_idx]
-st.session_state.selected_category = selected_label
+cols = st.columns(len(category_images))
+for i, (label, url) in enumerate(category_images.items()):
+    with cols[i]:
+        if st.session_state.selected_category == label:
+            st.image(url, use_container_width=True, output_format="PNG", caption=label, clamp=True, channels="RGB")
+            st.markdown('<div class="selected-cat"></div>', unsafe_allow_html=True)
+        else:
+            st.image(url, use_container_width=True, output_format="PNG", caption=label, clamp=True, channels="RGB")
+        if st.button(" ", key=f"btn_{label}"):
+            st.session_state.selected_category = label
 
-# 강조 스타일
-st.markdown(
-    f"<div style='text-align:center; margin-top:18px;'><b style='color:#4CAF50; font-size:1.3em'>✔ {selected_label} 선택됨</b></div>",
-    unsafe_allow_html=True
-)
-
+st.markdown(f"<div style='text-align:center; margin-top:16px;'><b style='color:#4CAF50;font-size:1.3em;'>✔ {st.session_state.selected_category} 선택됨</b></div>", unsafe_allow_html=True)
