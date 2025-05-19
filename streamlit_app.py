@@ -19,10 +19,9 @@ category_images = {
 NAVER_CLIENT_ID = st.secrets["naver_client_id"]
 NAVER_CLIENT_SECRET = st.secrets["naver_client_secret"]
 
-# 선택 상태 관리
-params = st.experimental_get_query_params()
-selected = params.get("cat", ["전체"])[0]
-st.experimental_set_query_params(cat=selected)
+# 쿼리 파라미터 기반 선택값
+selected = st.query_params.get("cat", "전체")
+st.query_params.update({"cat": selected})
 
 st.markdown("### 🍽️ 음식 종류를 선택하세요")
 
@@ -58,7 +57,6 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# 이미지 카테고리 가로 스크롤 렌더링
 st.markdown('<div class="scroll-menu">', unsafe_allow_html=True)
 for name, url in category_images.items():
     selected_class = "card selected" if name == selected else "card"
@@ -74,10 +72,8 @@ st.markdown('</div>', unsafe_allow_html=True)
 
 st.markdown(f"### 🍱 현재 선택된 음식: **{selected}**")
 
-# 세부 메뉴 입력
-sub_category = st.text_input("세부 메뉴 (예: 김치찌개, 파스타 등)", key="sub_category")
+sub_category = st.text_input("세부 메뉴 (예: 김치지게, 파스타 등)", key="sub_category")
 
-# 시간 확인
 seoul_tz = pytz.timezone("Asia/Seoul")
 def get_seoul_time():
     return datetime.now(seoul_tz)
@@ -88,7 +84,6 @@ def is_lunch_open_now():
 
 st.caption(f"현재 시간: {get_seoul_time().strftime('%Y-%m-%d %H:%M:%S')}")
 
-# NAVER API 함수
 def search_restaurants(query, display=5):
     url = "https://openapi.naver.com/v1/search/local.json"
     headers = {
@@ -105,7 +100,7 @@ def search_restaurants(query, display=5):
     if res.status_code == 200:
         return res.json().get("items", [])
     else:
-        st.error(f"검색 실패 - {res.status_code}")
+        st.error(f"\uac80\uc0c9 \uc2e4\ud328 - {res.status_code}")
         return []
 
 def search_blog_reviews(query, display=2):
@@ -115,7 +110,7 @@ def search_blog_reviews(query, display=2):
         "X-Naver-Client-Secret": NAVER_CLIENT_SECRET
     }
     params = {
-        "query": query + " 후기",
+        "query": query + " \ud6c4\uae30",
         "display": display,
         "sort": "sim"
     }
@@ -140,11 +135,10 @@ def search_images(query, display=1):
         return res.json().get("items", [])
     return []
 
-# 검색 실행
-query = f"계룡시 {sub_category} 맛집" if selected == "전체" else f"계룡시 {selected} {sub_category} 맛집"
+query = f"\uacc4\ub8cc\uc2dc {sub_category} \ub9db\uc9d1" if selected == "\uc804\uccb4" else f"\uacc4\ub8cc\uc2dc {selected} {sub_category} \ub9db\uc9d1"
 
 if sub_category:
-    st.write(f"🔍 검색어: {query}")
+    st.write(f"🔍 \uac80\uc0c9\uc5b4: {query}")
     results = search_restaurants(query, display=5)
 
     for i, item in enumerate(results):
@@ -153,24 +147,24 @@ if sub_category:
         map_url = f"https://map.naver.com/v5/search/{quote(address)}"
 
         st.markdown(f"### {title}")
-        st.write(f"📍 주소: {address}")
-        st.markdown(f"[🗺️ 지도 보기]({map_url})")
+        st.write(f"📍 \uc8fc소: {address}")
+        st.markdown(f"[🗙️ \uc9c0도 \ubcf4기]({map_url})")
 
         if is_lunch_open_now():
-            st.success("✅ 점심시간 운영 중")
+            st.success("✅ \uc810심시간 \uc6b4영 \uc911")
         else:
-            st.warning("⏰ 점심시간 외")
+            st.warning("⏰ \uc810심시간 외")
 
-        st.write(f"📞 전화번호: {item.get('telephone', '정보 없음')}")
+        st.write(f"📞 \uc804화번호: {item.get('telephone', '정보 없음')}")
         st.write(f"🔗 [홈페이지로 이동]({item.get('link', '')})")
 
-        st.text_input("📋 공유 링크", value=map_url, key=f"share_{i}")
+        st.text_input("📋 \uacf5유 \ub9c1크", value=map_url, key=f"share_{i}")
 
         images = search_images(title)
         if images:
             st.image(images[0]['link'], width=300)
 
-        with st.expander("📝 블로그 후기 보기"):
+        with st.expander("📜 \ube14로그 후기 보기"):
             blogs = search_blog_reviews(title)
             for blog in blogs:
                 blog_title = re.sub("<.*?>", "", blog.get("title", ""))
