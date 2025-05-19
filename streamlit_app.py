@@ -1,6 +1,6 @@
 import streamlit as st
 
-# 썸네일 이미지
+# 이미지 목록
 category_images = {
     "전체": "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/all.jpg",
     "한식": "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/korean.jpg",
@@ -11,63 +11,66 @@ category_images = {
     "카페/디저트": "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/dessert.jpg"
 }
 
-# 초기 선택값
+# 초기 선택
 if "selected_category" not in st.session_state:
     st.session_state.selected_category = "전체"
 
-st.markdown("### 🍽️ 음식 종류를 선택하세요")
+# 선택 처리
+def update_selection(cat):
+    st.session_state.selected_category = cat
 
-# CSS 스타일 (애니메이션 + 강조)
+# 스타일
 st.markdown("""
     <style>
-    .card {
-        display: inline-block;
-        width: 130px;
-        margin-right: 12px;
+    .scroll-menu {
+        display: flex;
+        overflow-x: auto;
+        gap: 12px;
+        padding: 10px 0;
+        white-space: nowrap;
+    }
+    .img-btn {
+        border: none;
+        background: none;
+        padding: 0;
+    }
+    .img-card {
+        width: 120px;
         border-radius: 10px;
         border: 2px solid transparent;
+        transition: all 0.2s ease;
         box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-        transition: all 0.3s ease;
-        text-align: center;
     }
-    .card:hover {
+    .img-card:hover {
         transform: scale(1.05);
         cursor: pointer;
-        box-shadow: 0 0 12px rgba(100, 100, 100, 0.3);
+        box-shadow: 0 0 10px rgba(0,0,0,0.2);
     }
-    .selected {
-        border: 3px solid #4CAF50 !important;
-        box-shadow: 0 0 15px rgba(76, 175, 80, 0.6);
-        transform: scale(1.07);
-    }
-    .scroll-container {
-        overflow-x: auto;
-        white-space: nowrap;
-        padding-bottom: 10px;
+    .img-card.selected {
+        border: 3px solid #4CAF50;
+        box-shadow: 0 0 12px rgba(76, 175, 80, 0.6);
+        transform: scale(1.08);
     }
     </style>
 """, unsafe_allow_html=True)
 
-# 이미지 클릭형 메뉴
-st.markdown('<div class="scroll-container">', unsafe_allow_html=True)
+st.markdown('<div class="scroll-menu">', unsafe_allow_html=True)
 
-cols = st.columns(len(category_images))
-for idx, (label, url) in enumerate(category_images.items()):
-    with cols[idx]:
-        # 이미지 클릭용 버튼
-        if st.button("", key=f"cat_{label}"):
-            st.session_state.selected_category = label
-
-        # 강조 여부
-        card_class = "card selected" if st.session_state.selected_category == label else "card"
+for cat, url in category_images.items():
+    # JS-Free 이미지 버튼처럼 보이게 하려면 form 사용
+    with st.form(f"form_{cat}"):
+        is_selected = (st.session_state.selected_category == cat)
+        class_name = "img-card selected" if is_selected else "img-card"
         st.markdown(f"""
-            <div class="{card_class}">
-                <img src="{url}" width="100%" style="border-radius:8px;">
-                <div style="margin-top:5px; font-weight:bold;">{label}</div>
-            </div>
+        <button type="submit" class="img-btn">
+            <img src="{url}" class="{class_name}">
+            <div style="text-align:center; font-weight:bold; margin-top:5px;">{cat}</div>
+        </button>
         """, unsafe_allow_html=True)
+        if st.form_submit_button(label="", use_container_width=True):
+            update_selection(cat)
 
 st.markdown("</div>", unsafe_allow_html=True)
 
-# 선택 결과
+# 선택된 항목 출력
 st.markdown(f"### 🍱 현재 선택된 음식: **{st.session_state.selected_category}**")
