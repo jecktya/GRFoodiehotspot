@@ -3,9 +3,9 @@ import requests
 import re
 from datetime import datetime
 from urllib.parse import quote
-import pytz  # ✅ 서울 시간대 적용을 위한 pytz 추가
+import pytz
 
-# ✅ NAVER API 키: 평평한 구조로 Secrets에서 불러오기
+# ✅ NAVER API 키: Streamlit Cloud의 평평한 secrets 키 구조
 NAVER_CLIENT_ID = st.secrets["naver_client_id"]
 NAVER_CLIENT_SECRET = st.secrets["naver_client_secret"]
 
@@ -72,29 +72,37 @@ def is_lunch_open_now():
     now = datetime.now(seoul_tz).time()
     return datetime.strptime("11:00", "%H:%M").time() <= now <= datetime.strptime("14:00", "%H:%M").time()
 
-# ✅ 현재 시간 표시용 (서울 기준)
+# ✅ 현재 시간 문자열 (서울 기준)
 def get_seoul_time_str():
     seoul_tz = pytz.timezone("Asia/Seoul")
     now = datetime.now(seoul_tz)
     return now.strftime("%Y-%m-%d %H:%M:%S")
 
-# 🌐 UI 시작
+# 🌐 Streamlit UI 시작
 st.title("🍱 계룡시 점심 맛집 추천기")
 st.caption(f"🕒 현재 대한민국 서울 시간: {get_seoul_time_str()}")
 
+# ✅ 음식 카테고리 콤보박스 (기본: 전체)
 main_category = st.selectbox(
     "음식 종류 선택",
-    ["한식", "중식", "일식", "양식", "분식", "카페/디저트"],
+    ["전체", "한식", "중식", "일식", "양식", "분식", "카페/디저트"],
+    index=0,
     key="main_category"
 )
 
+# 세부 메뉴 입력
 sub_category = st.text_input(
     "세부 메뉴 (예: 김치찌개, 파스타 등)",
     key="sub_category"
 )
 
 if st.button("맛집 검색", key="search_button"):
-    query = f"계룡시 {main_category} {sub_category} 맛집"
+    # ✅ 음식 종류가 전체일 경우 생략
+    if main_category == "전체":
+        query = f"계룡시 {sub_category} 맛집"
+    else:
+        query = f"계룡시 {main_category} {sub_category} 맛집"
+
     st.write(f"🔍 검색어: {query}")
     results = search_restaurants(query, display=5)
 
@@ -126,3 +134,6 @@ if st.button("맛집 검색", key="search_button"):
             blogs = search_blog_reviews(title)
             for blog in blogs:
                 blog_title = re.sub("<.*?>", "", blog["title"])
+                st.markdown(f"- [{blog_title}]({blog['link']})")
+
+        st.divider()
