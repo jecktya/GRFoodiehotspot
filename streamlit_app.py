@@ -4,7 +4,7 @@ import re
 from datetime import datetime
 from urllib.parse import quote
 
-# ✅ NAVER API 인증 정보 (Streamlit secrets에서 불러오기)
+# ✅ NAVER API 키: Streamlit Cloud의 Secrets에서 불러오기
 NAVER_CLIENT_ID = st.secrets["naver"]["client_id"]
 NAVER_CLIENT_SECRET = st.secrets["naver"]["client_secret"]
 
@@ -65,12 +65,12 @@ def search_images(query, display=1):
         return response.json()["items"]
     return []
 
-# ✅ 점심시간 판단 (11:00~14:00)
+# ✅ 점심시간 여부 판단 (11:00~14:00)
 def is_lunch_open_now():
     now = datetime.now().time()
     return datetime.strptime("11:00", "%H:%M").time() <= now <= datetime.strptime("14:00", "%H:%M").time()
 
-# 👉 Streamlit UI
+# 🌐 UI 시작
 st.title("🍱 계룡시 점심 맛집 추천기")
 
 main_category = st.selectbox(
@@ -107,10 +107,10 @@ if st.button("맛집 검색", key="search_button"):
         st.write(f"📞 전화번호: {item['telephone'] or '정보 없음'}")
         st.write(f"🔗 [홈페이지로 이동]({item['link']})")
 
-        # 공유용 링크 복사 UI
-        st.text_input("📋 카카오톡 공유할 링크 복사", value=map_url, key=f"share_link_{i}")
+        # 카카오톡 공유용 링크 복사 UI
+        st.text_input("📋 친구에게 보낼 링크 복사", value=map_url, key=f"share_link_{i}")
 
-        # 이미지 표시
+        # 이미지
         images = search_images(title)
         if images:
             st.image(images[0]['link'], width=300)
