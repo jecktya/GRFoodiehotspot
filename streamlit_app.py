@@ -4,9 +4,9 @@ import re
 from datetime import datetime
 from urllib.parse import quote
 
-# ✅ NAVER API 키: Streamlit Cloud의 Secrets에서 불러오기
-NAVER_CLIENT_ID = st.secrets["naver"]["client_id"]
-NAVER_CLIENT_SECRET = st.secrets["naver"]["client_secret"]
+# ✅ NAVER API 키: 평평한 구조로 Secrets에서 불러오기
+NAVER_CLIENT_ID = st.secrets["naver_client_id"]
+NAVER_CLIENT_SECRET = st.secrets["naver_client_secret"]
 
 # 🔍 네이버 지역 검색
 def search_restaurants(query, display=5):
@@ -107,7 +107,7 @@ if st.button("맛집 검색", key="search_button"):
         st.write(f"📞 전화번호: {item['telephone'] or '정보 없음'}")
         st.write(f"🔗 [홈페이지로 이동]({item['link']})")
 
-        # 카카오톡 공유용 링크 복사 UI
+        # 공유용 링크 복사 UI
         st.text_input("📋 친구에게 보낼 링크 복사", value=map_url, key=f"share_link_{i}")
 
         # 이미지
