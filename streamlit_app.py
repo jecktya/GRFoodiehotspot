@@ -14,23 +14,27 @@ category_images = {
 if "selected_category" not in st.session_state:
     st.session_state.selected_category = "전체"
 
-# 숨은 입력 필드 (상호작용용)
-selected = st.text_input("선택된 카테고리", st.session_state.selected_category, label_visibility="collapsed")
+selected = st.text_input("선택된 카테고리", st.session_state.selected_category, label_visibility="collapsed", key="cat_input")
+
 if selected and selected != st.session_state.selected_category:
     st.session_state.selected_category = selected
 
-# JS + HTML 통합 구성
+# 최종 보완된 JS 포함
 html_code = """
 <script>
 function setCategory(cat) {
-    const input = window.parent.document.querySelector('input[data-testid="stTextInput"]');
-    if (input) {
-        input.value = cat;
+    const inputs = window.parent.document.querySelectorAll('input[data-testid="stTextInput"]');
+    for (const input of inputs) {
+        input.value = "";
         input.dispatchEvent(new Event('input', { bubbles: true }));
+        setTimeout(() => {
+            input.value = cat;
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+        }, 10);
     }
 }
 </script>
-<div style="display:flex; gap:12px; overflow-x:auto; padding:8px 0;">
+<div style="display:flex; overflow-x:auto; gap:12px; padding:8px 0;">
 """
 
 for label, img in category_images.items():
@@ -46,5 +50,5 @@ for label, img in category_images.items():
 html_code += "</div>"
 
 st.markdown("### 🍽️ 음식 종류를 선택하세요")
-html(html_code, height=190)
+html(html_code, height=200)
 st.markdown(f"### 🍱 현재 선택된 음식: **{st.session_state.selected_category}**")
