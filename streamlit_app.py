@@ -1,6 +1,6 @@
 import streamlit as st
 
-# 이미지 카테고리
+# 카테고리 이미지 정의
 category_images = {
     "전체": "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/all.jpg",
     "한식": "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/korean.jpg",
@@ -11,52 +11,67 @@ category_images = {
     "카페/디저트": "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/dessert.jpg"
 }
 
-# 상태 초기화
+# 초기 선택값 설정
 if "selected_category" not in st.session_state:
     st.session_state.selected_category = "전체"
 
 st.markdown("### 🍽️ 음식 종류를 선택하세요")
 
-# CSS 스타일
+# CSS: 버튼 숨기고 이미지에 선택 효과
 st.markdown("""
     <style>
-    div[data-testid="column"] > div {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
+    .image-form {
+        display: inline-block;
+        margin-right: 10px;
+        text-align: center;
     }
-    .selected {
-        border: 4px solid #4CAF50;
-        border-radius: 10px;
-        box-shadow: 0 0 10px rgba(76,175,80,0.5);
+    .image-button {
+        border: none;
+        background: none;
+        padding: 0;
     }
     .category-img {
+        width: 120px;
         border-radius: 10px;
-        transition: transform 0.2s ease;
+        transition: all 0.2s ease;
+        border: 3px solid transparent;
     }
     .category-img:hover {
         transform: scale(1.05);
-        cursor: pointer;
         box-shadow: 0 0 10px rgba(0,0,0,0.2);
+        cursor: pointer;
+    }
+    .selected {
+        border-color: #4CAF50;
+        box-shadow: 0 0 12px rgba(76,175,80,0.6);
+        transform: scale(1.08);
     }
     </style>
 """, unsafe_allow_html=True)
 
-# 이미지 버튼 렌더링 (한 줄 스크롤 아님, 간단히 열 배치)
-cols = st.columns(len(category_images))
+# 이미지 선택 UI
+st.markdown('<div style="white-space:nowrap; overflow-x:auto;">', unsafe_allow_html=True)
 
-for idx, (label, url) in enumerate(category_images.items()):
-    with cols[idx]:
-        clicked = st.button(" ", key=f"btn_{label}")
-        if clicked:
+for label, url in category_images.items():
+    is_selected = (st.session_state.selected_category == label)
+    selected_class = "category-img selected" if is_selected else "category-img"
+
+    with st.form(f"form_{label}"):
+        st.markdown(f'<div class="image-form">', unsafe_allow_html=True)
+        st.markdown(
+            f"""
+            <button class="image-button" type="submit">
+                <img src="{url}" class="{selected_class}">
+            </button>
+            <div style="margin-top: 5px; font-weight: bold;">{label}</div>
+            """,
+            unsafe_allow_html=True
+        )
+        if st.form_submit_button("", use_container_width=True):
             st.session_state.selected_category = label
+        st.markdown("</div>", unsafe_allow_html=True)
 
-        # 선택 시 강조 클래스 부여
-        selected_class = "selected" if st.session_state.selected_category == label else ""
-        st.markdown(f"""
-            <img src="{url}" width="100%" class="category-img {selected_class}">
-            <div style="text-align:center; font-weight:bold; margin-top:4px;">{label}</div>
-        """, unsafe_allow_html=True)
+st.markdown('</div>', unsafe_allow_html=True)
 
-# 선택 결과 출력
+# 결과 표시
 st.markdown(f"### 🍱 현재 선택된 음식: **{st.session_state.selected_category}**")
