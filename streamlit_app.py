@@ -1,11 +1,6 @@
 import streamlit as st
-import requests
-import re
-from datetime import datetime
-from urllib.parse import quote
-import pytz
 
-# 음식 이미지 URL
+# 이미지와 카테고리 정의
 category_images = {
     "전체": "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/all.jpg",
     "한식": "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/korean.jpg",
@@ -16,129 +11,37 @@ category_images = {
     "카페/디저트": "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/dessert.jpg"
 }
 
-# NAVER API 키
-NAVER_CLIENT_ID = st.secrets["naver_client_id"]
-NAVER_CLIENT_SECRET = st.secrets["naver_client_secret"]
-
-# UI: 이미지 선택
 st.markdown("## 음식 종류를 선택해주세요")
 
+# 세션 초기화
 if "selected_category" not in st.session_state:
     st.session_state.selected_category = "전체"
 
-cols = st.columns(len(category_images))
-for idx, (cat, img_url) in enumerate(category_images.items()):
-    with cols[idx]:
-        st.image(img_url, use_container_width=True)
-        if st.radio("선택", options=["", cat], key=f"radio_{idx}", label_visibility="collapsed") == cat:
-            st.session_state.selected_category = cat
+# 선택된 카테고리
+selected = st.session_state.selected_category
 
-main_category = st.session_state.selected_category
-st.markdown(f"### 🍱 현재 선택된 음식: **{main_category}**")
+# 스타일 정의 (선택 시 테두리 강조)
+def render_category_button(name, img_url, selected_name):
+    border = "5px solid #4CAF50" if name == selected_name else "1px solid #ccc"
+    return f"""
+    <form action="" method="post">
+        <button name="category" value="{name}" style="border:{border}; margin:5px; padding:0; background:none;">
+            <img src="{img_url}" width="120" height="90" style="display:block;">
+            <div style="text-align:center; font-weight:bold;">{name}</div>
+        </button>
+    </form>
+    """
 
-# 세부 메뉴 입력
-sub_category = st.text_input("세부 메뉴 입력 (예: 김치찌개, 파스타 등)", key="sub_category")
+# 카테고리 표시 (3열씩)
+cols = st.columns(3)
+for idx, (name, url) in enumerate(category_images.items()):
+    with cols[idx % 3]:
+        html = render_category_button(name, url, selected)
+        st.markdown(html, unsafe_allow_html=True)
 
-# 시간 관련 함수
-seoul_tz = pytz.timezone("Asia/Seoul")
-def get_seoul_time():
-    return datetime.now(seoul_tz)
+# 폼 처리
+if st.session_state.get("category"):
+    st.session_state.selected_category = st.session_state["category"]
 
-def is_lunch_open_now():
-    now = get_seoul_time().time()
-    return datetime.strptime("11:00", "%H:%M").time() <= now <= datetime.strptime("14:00", "%H:%M").time()
-
-st.caption(f"현재 시간: {get_seoul_time().strftime('%Y-%m-%d %H:%M:%S')}")
-
-# NAVER API 함수
-def search_restaurants(query, display=5):
-    url = "https://openapi.naver.com/v1/search/local.json"
-    headers = {
-        "X-Naver-Client-Id": NAVER_CLIENT_ID,
-        "X-Naver-Client-Secret": NAVER_CLIENT_SECRET
-    }
-    params = {
-        "query": query,
-        "display": display,
-        "start": 1,
-        "sort": "random"
-    }
-    res = requests.get(url, headers=headers, params=params)
-    if res.status_code == 200:
-        return res.json().get("items", [])
-    else:
-        st.error(f"검색 실패 - {res.status_code}")
-        return []
-
-def search_blog_reviews(query, display=2):
-    url = "https://openapi.naver.com/v1/search/blog.json"
-    headers = {
-        "X-Naver-Client-Id": NAVER_CLIENT_ID,
-        "X-Naver-Client-Secret": NAVER_CLIENT_SECRET
-    }
-    params = {
-        "query": query + " 후기",
-        "display": display,
-        "sort": "sim"
-    }
-    res = requests.get(url, headers=headers, params=params)
-    if res.status_code == 200:
-        return res.json().get("items", [])
-    return []
-
-def search_images(query, display=1):
-    url = "https://openapi.naver.com/v1/search/image"
-    headers = {
-        "X-Naver-Client-Id": NAVER_CLIENT_ID,
-        "X-Naver-Client-Secret": NAVER_CLIENT_SECRET
-    }
-    params = {
-        "query": query,
-        "display": display,
-        "sort": "sim"
-    }
-    res = requests.get(url, headers=headers, params=params)
-    if res.status_code == 200:
-        return res.json().get("items", [])
-    return []
-
-# 검색 실행
-if main_category == "전체":
-    query = f"계룡시 {sub_category} 맛집"
-else:
-    query = f"계룡시 {main_category} {sub_category} 맛집"
-
-if sub_category:
-    st.write(f"🔍 탐색 중: {query}")
-    results = search_restaurants(query, display=5)
-
-    for i, item in enumerate(results):
-        title = re.sub("<.*?>", "", item.get("title", ""))
-        address = item.get("address", "")
-        map_url = f"https://map.naver.com/v5/search/{quote(address)}"
-
-        st.markdown(f"### 🍽 {title}")
-        st.write(f"📍 주소: {address}")
-        st.markdown(f"[🗺 지도 보기]({map_url})")
-
-        if is_lunch_open_now():
-            st.success("🕒 점심시간 운영 중")
-        else:
-            st.warning("⏰ 점심시간이 아닙니다")
-
-        st.write(f"📞 전화: {item.get('telephone', '정보 없음')}")
-        st.write(f"[🔗 홈페이지 이동]({item.get('link', '')})")
-
-        st.text_input("🔗 공유할 링크", value=map_url, key=f"share_{i}")
-
-        images = search_images(title)
-        if images:
-            st.image(images[0].get('link', ''), width=300)
-
-        with st.expander("📝 블로그 후기 보기"):
-            blogs = search_blog_reviews(title)
-            for blog in blogs:
-                blog_title = re.sub("<.*?>", "", blog.get("title", ""))
-                st.markdown(f"- [{blog_title}]({blog.get('link', '')})")
-
-        st.divider()
+# 하단 텍스트 표시
+st.markdown(f"### 🍱 현재 선택된 음식: **{st.session_state.selected_category}**")
