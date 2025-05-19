@@ -5,22 +5,22 @@ from datetime import datetime
 from urllib.parse import quote
 import pytz
 
-# GitHub에서 가져온 음식 이미지
+# 음식 이미지 URL (GitHub에서 직접 가져옴)
 category_images = {
     "전체": "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/all.jpg",
-    "한식": "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/korean.jpg",
-    "중식": "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/chinese.jpg",
-    "일식": "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/japanese.jpg",
-    "양식": "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/western.jpg",
-    "분식": "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/snack.jpg",
-    "카페/디저트": "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/dessert.jpg"
+    "한식": "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/Korean.jpg",
+    "중식": "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/Chinese.jpg",
+    "일식": "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/Japanese.jpg",
+    "양식": "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/Western.jpg",
+    "분식": "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/Snack.jpg",
+    "카페/디저트": "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/Dessert.jpg"
 }
 
-# NAVER API 키는 Streamlit Cloud의 secrets.toml로 관리
+# NAVER API 키
 NAVER_CLIENT_ID = st.secrets["naver_client_id"]
 NAVER_CLIENT_SECRET = st.secrets["naver_client_secret"]
 
-# 카테고리 UI
+# 카테고리 선택
 st.markdown("## 음식 종류를 선택해주세요")
 
 if "selected_category" not in st.session_state:
@@ -29,7 +29,7 @@ if "selected_category" not in st.session_state:
 cols = st.columns(len(category_images))
 for idx, (cat, img_url) in enumerate(category_images.items()):
     with cols[idx]:
-        st.image(img_url, use_column_width=True)
+        st.image(img_url, use_container_width=True)
         if st.button(cat, key=f"cat_{idx}"):
             st.session_state.selected_category = cat
         if st.session_state.selected_category == cat:
@@ -40,7 +40,7 @@ main_category = st.session_state.selected_category
 # 세부 메뉴 입력
 sub_category = st.text_input("세부 메뉴 입력 (예: 김치찌개, 파스타 등)", key="sub_category")
 
-# 현재 시간 (KST)
+# 시간 관련 함수
 seoul_tz = pytz.timezone("Asia/Seoul")
 def get_seoul_time():
     return datetime.now(seoul_tz)
@@ -51,7 +51,7 @@ def is_lunch_open_now():
 
 st.caption(f"현재 시간: {get_seoul_time().strftime('%Y-%m-%d %H:%M:%S')}")
 
-# NAVER API로 맛집 검색
+# NAVER API 함수
 def search_restaurants(query, display=5):
     url = "https://openapi.naver.com/v1/search/local.json"
     headers = {
@@ -103,7 +103,7 @@ def search_images(query, display=1):
         return res.json().get("items", [])
     return []
 
-# 자동 검색 실행
+# 검색 실행
 if main_category == "전체":
     query = f"계룡시 {sub_category} 맛집"
 else:
