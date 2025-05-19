@@ -3,6 +3,7 @@ import requests
 import re
 from datetime import datetime
 from urllib.parse import quote
+import pytz  # ✅ 서울 시간대 적용을 위한 pytz 추가
 
 # ✅ NAVER API 키: 평평한 구조로 Secrets에서 불러오기
 NAVER_CLIENT_ID = st.secrets["naver_client_id"]
@@ -65,13 +66,21 @@ def search_images(query, display=1):
         return response.json()["items"]
     return []
 
-# ✅ 점심시간 여부 판단 (11:00~14:00)
+# ✅ 서울 시간대 기준 점심시간 여부 판단
 def is_lunch_open_now():
-    now = datetime.now().time()
+    seoul_tz = pytz.timezone("Asia/Seoul")
+    now = datetime.now(seoul_tz).time()
     return datetime.strptime("11:00", "%H:%M").time() <= now <= datetime.strptime("14:00", "%H:%M").time()
+
+# ✅ 현재 시간 표시용 (서울 기준)
+def get_seoul_time_str():
+    seoul_tz = pytz.timezone("Asia/Seoul")
+    now = datetime.now(seoul_tz)
+    return now.strftime("%Y-%m-%d %H:%M:%S")
 
 # 🌐 UI 시작
 st.title("🍱 계룡시 점심 맛집 추천기")
+st.caption(f"🕒 현재 대한민국 서울 시간: {get_seoul_time_str()}")
 
 main_category = st.selectbox(
     "음식 종류 선택",
@@ -107,19 +116,13 @@ if st.button("맛집 검색", key="search_button"):
         st.write(f"📞 전화번호: {item['telephone'] or '정보 없음'}")
         st.write(f"🔗 [홈페이지로 이동]({item['link']})")
 
-        # 공유용 링크 복사 UI
         st.text_input("📋 친구에게 보낼 링크 복사", value=map_url, key=f"share_link_{i}")
 
-        # 이미지
         images = search_images(title)
         if images:
             st.image(images[0]['link'], width=300)
 
-        # 블로그 후기
         with st.expander("📝 블로그 후기 보기"):
             blogs = search_blog_reviews(title)
             for blog in blogs:
                 blog_title = re.sub("<.*?>", "", blog["title"])
-                st.markdown(f"- [{blog_title}]({blog['link']})")
-
-        st.divider()
