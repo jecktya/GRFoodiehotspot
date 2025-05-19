@@ -8,12 +8,12 @@ import pytz
 # 음식 이미지 URL (GitHub에서 직접 가져옴)
 category_images = {
     "전체": "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/all.jpg",
-    "한식": "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/Korean.jpg",
-    "중식": "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/Chinese.jpg",
-    "일식": "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/Japanese.jpg",
-    "양식": "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/Western.jpg",
-    "분식": "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/Snack.jpg",
-    "카페/디저트": "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/Dessert.jpg"
+    "한식": "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/korean.jpg",
+    "중식": "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/chinese.jpg",
+    "일식": "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/japanese.jpg",
+    "양식": "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/western.jpg",
+    "분식": "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/snack.jpg",
+    "카페/디저트": "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/dessert.jpg"
 }
 
 # NAVER API 키
