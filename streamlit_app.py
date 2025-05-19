@@ -5,15 +5,15 @@ from datetime import datetime
 from urllib.parse import quote
 import pytz
 
-# 썸네일 이미지
+# 썸네일 이미지 (GitHub 이미지 주소로 교체)
 category_images = {
-    "전체": "https://yourdomain.com/images/all.png",
-    "한식": "https://yourdomain.com/images/korean.png",
-    "중식": "https://yourdomain.com/images/chinese.png",
-    "일식": "https://yourdomain.com/images/japanese.png",
-    "양식": "https://yourdomain.com/images/western.png",
-    "분식": "https://yourdomain.com/images/snack.png",
-    "카페/디저트": "https://yourdomain.com/images/dessert.png"
+    "전체": "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/all.jpg",
+    "한식": "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/korean.jpg",
+    "중식": "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/chinese.jpg",
+    "일식": "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/japanese.jpg",
+    "양식": "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/western.jpg",
+    "분식": "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/snack.jpg",
+    "카페/디저트": "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/dessert.jpg"
 }
 
 NAVER_CLIENT_ID = st.secrets["naver_client_id"]
@@ -22,6 +22,7 @@ NAVER_CLIENT_SECRET = st.secrets["naver_client_secret"]
 # 쿼리 파라미터 기반 선택값
 selected = st.query_params.get("cat", "전체")
 st.query_params.update({"cat": selected})
+st.session_state.selected_category = selected
 
 st.markdown("### 🍽️ 음식 종류를 선택하세요")
 
@@ -72,7 +73,7 @@ st.markdown('</div>', unsafe_allow_html=True)
 
 st.markdown(f"### 🍱 현재 선택된 음식: **{selected}**")
 
-sub_category = st.text_input("세부 메뉴 (예: 김치지게, 파스타 등)", key="sub_category")
+sub_category = st.text_input("세부 메뉴 (예: 김치찌개, 파스타 등)", key="sub_category")
 
 seoul_tz = pytz.timezone("Asia/Seoul")
 def get_seoul_time():
@@ -100,7 +101,7 @@ def search_restaurants(query, display=5):
     if res.status_code == 200:
         return res.json().get("items", [])
     else:
-        st.error(f"\uac80\uc0c9 \uc2e4\ud328 - {res.status_code}")
+        st.error(f"검색 실패 - {res.status_code}")
         return []
 
 def search_blog_reviews(query, display=2):
@@ -110,7 +111,7 @@ def search_blog_reviews(query, display=2):
         "X-Naver-Client-Secret": NAVER_CLIENT_SECRET
     }
     params = {
-        "query": query + " \ud6c4\uae30",
+        "query": query + " 후기",
         "display": display,
         "sort": "sim"
     }
@@ -135,10 +136,10 @@ def search_images(query, display=1):
         return res.json().get("items", [])
     return []
 
-query = f"\uacc4\ub8cc\uc2dc {sub_category} \ub9db\uc9d1" if selected == "\uc804\uccb4" else f"\uacc4\ub8cc\uc2dc {selected} {sub_category} \ub9db\uc9d1"
+query = f"계룡시 {sub_category} 맛집" if selected == "전체" else f"계룡시 {selected} {sub_category} 맛집"
 
 if sub_category:
-    st.write(f"🔍 \uac80\uc0c9\uc5b4: {query}")
+    st.write(f"🔍 검색어: {query}")
     results = search_restaurants(query, display=5)
 
     for i, item in enumerate(results):
@@ -147,24 +148,24 @@ if sub_category:
         map_url = f"https://map.naver.com/v5/search/{quote(address)}"
 
         st.markdown(f"### {title}")
-        st.write(f"📍 \uc8fc소: {address}")
-        st.markdown(f"[🗙️ \uc9c0도 \ubcf4기]({map_url})")
+        st.write(f"📍 주소: {address}")
+        st.markdown(f"[🗺️ 지도 보기]({map_url})")
 
         if is_lunch_open_now():
-            st.success("✅ \uc810심시간 \uc6b4영 \uc911")
+            st.success("✅ 점심시간 운영 중")
         else:
-            st.warning("⏰ \uc810심시간 외")
+            st.warning("⏰ 점심시간 외")
 
-        st.write(f"📞 \uc804화번호: {item.get('telephone', '정보 없음')}")
+        st.write(f"📞 전화번호: {item.get('telephone', '정보 없음')}")
         st.write(f"🔗 [홈페이지로 이동]({item.get('link', '')})")
 
-        st.text_input("📋 \uacf5유 \ub9c1크", value=map_url, key=f"share_{i}")
+        st.text_input("📋 공유 링크", value=map_url, key=f"share_{i}")
 
         images = search_images(title)
         if images:
             st.image(images[0]['link'], width=300)
 
-        with st.expander("📜 \ube14로그 후기 보기"):
+        with st.expander("📝 블로그 후기 보기"):
             blogs = search_blog_reviews(title)
             for blog in blogs:
                 blog_title = re.sub("<.*?>", "", blog.get("title", ""))
