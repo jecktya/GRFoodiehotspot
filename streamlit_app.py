@@ -10,28 +10,24 @@ category_images = {
     "카페/디저트": "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/dessert.jpg"
 }
 
-# 선택된 카테고리 유지
+st.markdown("### 🍽️ 음식 종류를 선택하세요")
+
+# 선택 UI (라디오박스)
 selected_category = st.radio(
-    "🍽️ 음식 종류를 선택하세요",
+    "카테고리",
     list(category_images.keys()),
-    horizontal=True
+    horizontal=True,
+    index=None,  # 아무것도 선택 안 된 상태가 기본
 )
 
-# 그림+선택 강조 렌더링
-cols = st.columns(len(category_images))
-for i, (label, url) in enumerate(category_images.items()):
-    with cols[i]:
-        border = "4px solid #4CAF50" if label == selected_category else "3px solid #e0e0e0"
-        st.markdown(
-            f'<img src="{url}" style="width:110px;border-radius:12px;border:{border};margin-bottom:4px;box-shadow:0 1px 6px rgba(0,0,0,0.09);" />',
-            unsafe_allow_html=True
-        )
-        st.markdown(
-            f"<div style='text-align:center;font-weight:bold;'>{label}</div>",
-            unsafe_allow_html=True
-        )
+# 아무것도 선택 안하면 그림 안 보임
+if selected_category is not None:
+    st.markdown("---")
+    st.markdown(
+        f"<div style='display:flex; flex-direction:column; align-items:center;'>"
+        f"<img src='{category_images[selected_category]}' style='width:240px; border-radius:15px; border:4px solid #4CAF50; box-shadow:0 2px 18px rgba(76,175,80,0.10); margin-bottom:12px;'>"
+        f"<div style='font-size:1.2em; color:#4CAF50; font-weight:bold; margin-top:7px;'>{selected_category}</div>"
+        f"</div>",
+        unsafe_allow_html=True
+    )
 
-st.markdown(
-    f"<div style='text-align:center; margin-top:18px;'><b style='color:#4CAF50; font-size:1.3em'>✔ {selected_category} 선택됨</b></div>",
-    unsafe_allow_html=True
-)
