@@ -29,7 +29,7 @@ if "selected_category" not in st.session_state:
 cols = st.columns(len(category_images))
 for idx, (cat, img_url) in enumerate(category_images.items()):
     with cols[idx]:
-        st.image(img_url, use_container_width=True)
+        st.image(img_url, use_container_width=True)  # ✅ 수정됨
         if st.button(cat, key=f"cat_{idx}"):
             st.session_state.selected_category = cat
         if st.session_state.selected_category == cat:
