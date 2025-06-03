@@ -8,8 +8,12 @@ from urllib.parse import quote
 # ---------------------------------------------------
 # 1. Streamlit Secrets에서 NAVER API 키 가져오기
 # ---------------------------------------------------
-NAVER_CLIENT_ID = st.secrets["NAVER_CLIENT_ID"]
-NAVER_CLIENT_SECRET = st.secrets["NAVER_CLIENT_SECRET"]
+try:
+    NAVER_CLIENT_ID = st.secrets["NAVER_CLIENT_ID"]
+    NAVER_CLIENT_SECRET = st.secrets["NAVER_CLIENT_SECRET"]
+except KeyError:
+    NAVER_CLIENT_ID = None
+    NAVER_CLIENT_SECRET = None
 
 # ---------------------------------------------------
 # 2. 서울(KST) 시간대 설정
@@ -21,11 +25,11 @@ KST = pytz.timezone("Asia/Seoul")
 # 3. 카테고리별 이미지 URL 딕셔너리
 # ---------------------------------------------------
 category_images = {
-    "한식":      "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/korean.jpg",
-    "중식":      "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/chinese.jpg",
-    "일식":      "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/japanese.jpg",
-    "양식":      "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/western.jpg",
-    "분식":      "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/snack.jpg",
+    "한식":       "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/korean.jpg",
+    "중식":       "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/chinese.jpg",
+    "일식":       "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/japanese.jpg",
+    "양식":       "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/western.jpg",
+    "분식":       "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/snack.jpg",
     "카페/디저트": "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/dessert.jpg"
 }
 
@@ -35,6 +39,9 @@ category_images = {
 # ---------------------------------------------------
 @st.cache_data(ttl=3600, show_spinner=False)
 def search_restaurants(query: str, display: int = 5, sort: str = "random"):
+    if not NAVER_CLIENT_ID or not NAVER_CLIENT_SECRET:
+        return []
+
     url = "https://openapi.naver.com/v1/search/local.json"
     headers = {
         "X-Naver-Client-Id":     NAVER_CLIENT_ID,
@@ -63,6 +70,9 @@ def search_restaurants(query: str, display: int = 5, sort: str = "random"):
 # ---------------------------------------------------
 @st.cache_data(ttl=3600, show_spinner=False)
 def search_blog_reviews(query: str, display: int = 2):
+    if not NAVER_CLIENT_ID or not NAVER_CLIENT_SECRET:
+        return []
+
     url = "https://openapi.naver.com/v1/search/blog.json"
     headers = {
         "X-Naver-Client-Id":     NAVER_CLIENT_ID,
@@ -84,6 +94,9 @@ def search_blog_reviews(query: str, display: int = 2):
 # ---------------------------------------------------
 @st.cache_data(ttl=3600, show_spinner=False)
 def search_images(query: str, display: int = 1):
+    if not NAVER_CLIENT_ID or not NAVER_CLIENT_SECRET:
+        return []
+
     url = "https://openapi.naver.com/v1/search/image"
     headers = {
         "X-Naver-Client-Id":     NAVER_CLIENT_ID,
@@ -134,7 +147,6 @@ with st.sidebar:
 
     # 9.2. 선택된 카테고리에 따른 이미지 미리보기
     if selected_category in category_images:
-        # HTML/CSS로 스타일링된 이미지 출력
         st.markdown("---")
         st.markdown(
             f"""
@@ -183,101 +195,110 @@ if search_btn:
     if selected_category not in category_images:
         st.warning("먼저 '음식 종류'를 선택해 주세요.")
     else:
-        # 10.2. 쿼리 생성: 예) "계룡시 한식 김치찌개 맛집", sub_category가 비었으면 "계룡시 한식 맛집"
-        if sub_category.strip() == "":
-            query = f"계룡시 {selected_category} 맛집"
+        # 10.2. Secret이 누락된 경우에는 더 이상 진행하지 않고 에러 메시지 출력
+        if not NAVER_CLIENT_ID or not NAVER_CLIENT_SECRET:
+            st.error(
+                "❗️ 네이버 API 키가 설정되지 않았습니다.\n"
+                "Streamlit Cloud의 Settings → Secrets 탭에서 "
+                "`NAVER_CLIENT_ID`와 `NAVER_CLIENT_SECRET`을 등록해 주세요."
+            )
         else:
-            query = f"계룡시 {selected_category} {sub_category} 맛집"
+            # 10.3. 쿼리 생성: 예) "계룡시 한식 김치찌개 맛집", sub_category가 비었으면 "계룡시 한식 맛집"
+            if sub_category.strip() == "":
+                query = f"계룡시 {selected_category} 맛집"
+            else:
+                query = f"계룡시 {selected_category} {sub_category} 맛집"
 
-        st.write(f"🔍 검색어: **{query}**")
+            st.write(f"🔍 검색어: **{query}**")
 
-        # 10.3. 네이버 지역 검색 API 호출
-        results = search_restaurants(query, display=display_count, sort=sort_option)
+            # 10.4. 네이버 지역 검색 API 호출
+            results = search_restaurants(query, display=display_count, sort=sort_option)
 
-        # 10.4. 검색 결과가 없을 때
-        if not results:
-            st.info("검색 결과가 없습니다. 다른 키워드로 시도해 보세요.")
-        else:
-            # 10.5. 현재 시각(KST) 표시 및 점심시간 여부
-            now_str    = datetime.now(KST).strftime("%Y-%m-%d %H:%M")
-            lunch_flag = is_lunch_open_now()
-            st.write(f"🕒 현재 시각 (KST): {now_str}")
+            # 10.5. 검색 결과가 없을 때
+            if not results:
+                st.info("🔎 검색 결과가 없습니다. 다른 키워드로 시도해 보세요.")
+            else:
+                # 10.6. 현재 시각(KST) 표시 및 점심시간 여부
+                now_str    = datetime.now(KST).strftime("%Y-%m-%d %H:%M")
+                lunch_flag = is_lunch_open_now()
+                st.write(f"🕒 현재 시각 (KST): {now_str}")
 
-            # 10.6. 결과를 2열 그리드로 배치
-            cols = st.columns(2)
-            for idx, item in enumerate(results):
-                col = cols[idx % 2]
-                with col:
-                    # 10.6.1. 제목(HTML 태그 제거)
-                    title_raw   = item.get("title", "")
-                    title_clean = re.sub(r"<[^>]+>", "", title_raw)
-                    st.markdown(f"### {title_clean}")
+                # 10.7. 결과를 2열 그리드로 배치
+                cols = st.columns(2)
+                for idx, item in enumerate(results):
+                    col = cols[idx % 2]
+                    with col:
+                        # 10.7.1. 제목(HTML 태그 제거)
+                        title_raw   = item.get("title", "")
+                        title_clean = re.sub(r"<[^>]+>", "", title_raw)
+                        st.markdown(f"### {title_clean}")
 
-                    # 10.6.2. 주소 및 네이버 지도 링크
-                    address = item.get("address", "")
-                    if address:
-                        encoded_address = quote(address)
-                        map_url = f"https://map.naver.com/v5/search/{encoded_address}"
-                        st.write(f"📍 주소: {address}")
-                        st.markdown(f"🗺️ [지도에서 보기]({map_url})")
-                    else:
-                        st.write("📍 주소 정보 없음")
-
-                    # 10.6.3. 점심시간 운영 여부
-                    if lunch_flag:
-                        st.success("✅ 현재 점심시간 운영 중 (11:00~14:00)")
-                    else:
-                        st.warning("⛔ 점심시간이 아닙니다 (11:00~14:00)")
-
-                    # 10.6.4. 전화번호
-                    phone = item.get("telephone", "")
-                    st.write(f"📞 전화번호: {phone if phone else '정보 없음'}")
-
-                    # 10.6.5. 홈페이지 링크
-                    link = item.get("link", "")
-                    if link:
-                        st.markdown(f"🔗 [홈페이지로 이동]({link})")
-                    else:
-                        st.write("🔗 홈페이지 정보 없음")
-
-                    # 10.6.6. 공유 링크 복사 (지도 URL)
-                    if address:
-                        st.text_input(
-                            "📋 공유 링크 복사", 
-                            value=map_url, 
-                            key=f"share_{idx}"
-                        )
-                    else:
-                        st.text_input(
-                            "📋 공유 링크 복사", 
-                            value="주소 정보 없음", 
-                            key=f"share_{idx}"
-                        )
-
-                    # 10.6.7. 이미지 표시 (네이버 이미지 검색 API)
-                    images = search_images(title_clean)
-                    if images and images[0].get("link"):
-                        st.image(
-                            images[0]["link"], 
-                            caption=f"{title_clean} 이미지 예시", 
-                            use_column_width=True
-                        )
-                    else:
-                        st.write("🖼️ 이미지 정보 없음")
-
-                    # 10.6.8. 블로그 후기 보기(확장 패널)
-                    with st.expander("📝 블로그 후기 보기"):
-                        blogs = search_blog_reviews(title_clean)
-                        if not blogs:
-                            st.write("후기 정보 없음")
+                        # 10.7.2. 주소 및 네이버 지도 링크
+                        address = item.get("address", "")
+                        if address:
+                            encoded_address = quote(address)
+                            map_url = f"https://map.naver.com/v5/search/{encoded_address}"
+                            st.write(f"📍 주소: {address}")
+                            st.markdown(f"🗺️ [지도에서 보기]({map_url})")
                         else:
-                            for blog in blogs:
-                                blog_title_raw = blog.get("title", "")
-                                blog_title     = re.sub(r"<[^>]+>", "", blog_title_raw)
-                                blog_link      = blog.get("link", "")
-                                if blog_link:
-                                    st.markdown(f"- [{blog_title}]({blog_link})")
-                                else:
-                                    st.write(f"- {blog_title} (링크 없음)")
+                            st.write("📍 주소 정보 없음")
 
-                    st.divider()
+                        # 10.7.3. 점심시간 운영 여부
+                        if lunch_flag:
+                            st.success("✅ 현재 점심시간 운영 중 (11:00~14:00)")
+                        else:
+                            st.warning("⛔ 점심시간이 아닙니다 (11:00~14:00)")
+
+                        # 10.7.4. 전화번호
+                        phone = item.get("telephone", "")
+                        st.write(f"📞 전화번호: {phone if phone else '정보 없음'}")
+
+                        # 10.7.5. 홈페이지 링크
+                        link = item.get("link", "")
+                        if link:
+                            st.markdown(f"🔗 [홈페이지로 이동]({link})")
+                        else:
+                            st.write("🔗 홈페이지 정보 없음")
+
+                        # 10.7.6. 공유 링크 복사 (지도 URL)
+                        if address:
+                            st.text_input(
+                                "📋 공유 링크 복사", 
+                                value=map_url, 
+                                key=f"share_{idx}"
+                            )
+                        else:
+                            st.text_input(
+                                "📋 공유 링크 복사", 
+                                value="주소 정보 없음", 
+                                key=f"share_{idx}"
+                            )
+
+                        # 10.7.7. 이미지 표시 (네이버 이미지 검색 API)
+                        images = search_images(title_clean)
+                        if images and images[0].get("link"):
+                            # use_column_width 대신 use_container_width=True 로 변경
+                            st.image(
+                                images[0]["link"], 
+                                caption=f"{title_clean} 이미지 예시", 
+                                use_container_width=True
+                            )
+                        else:
+                            st.write("🖼️ 이미지 정보 없음")
+
+                        # 10.7.8. 블로그 후기 보기(확장 패널)
+                        with st.expander("📝 블로그 후기 보기"):
+                            blogs = search_blog_reviews(title_clean)
+                            if not blogs:
+                                st.write("후기 정보 없음")
+                            else:
+                                for blog in blogs:
+                                    blog_title_raw = blog.get("title", "")
+                                    blog_title     = re.sub(r"<[^>]+>", "", blog_title_raw)
+                                    blog_link      = blog.get("link", "")
+                                    if blog_link:
+                                        st.markdown(f"- [{blog_title}]({blog_link})")
+                                    else:
+                                        st.write(f"- {blog_title} (링크 없음)")
+
+                        st.divider()
