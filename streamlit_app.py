@@ -2,6 +2,7 @@ import streamlit as st
 import requests
 import re
 import pytz
+import pandas as pd
 from datetime import datetime
 from urllib.parse import quote
 
@@ -22,23 +23,22 @@ KST = pytz.timezone("Asia/Seoul")
 
 
 # ---------------------------------------------------
-# 3. 카테고리별 이미지 URL 딕셔너리
+# 3. “음식” 관련 카테고리 대분류 리스트
 # ---------------------------------------------------
-category_images = {
-    "한식":       "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/korean.jpg",
-    "중식":       "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/chinese.jpg",
-    "일식":       "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/japanese.jpg",
-    "양식":       "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/western.jpg",
-    "분식":       "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/snack.jpg",
-    "카페/디저트": "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/dessert.jpg"
-}
-
+FOOD_CATEGORIES = [
+    "한식", "중식", "일식", "양식", "분식",
+    "카페/디저트", "치킨", "피자", "족발/보쌈",
+    "패스트푸드", "뷔페", "주점/호프"
+]
 
 # ---------------------------------------------------
-# 4. 네이버 지역 검색 (맛집 검색) 함수
+# 4. 네이버 지역 검색 함수 (맛집 검색)
 # ---------------------------------------------------
-@st.cache_data(ttl=3600, show_spinner=False)
-def search_restaurants(query: str, display: int = 5, sort: str = "random"):
+@st.cache_data(ttl=1800, show_spinner=False)
+def search_restaurants(query: str, display: int = 10, sort: str = "review"):
+    """
+    - sort: "random", "comment", "review", "distance"
+    """
     if not NAVER_CLIENT_ID or not NAVER_CLIENT_SECRET:
         return []
 
@@ -53,25 +53,29 @@ def search_restaurants(query: str, display: int = 5, sort: str = "random"):
         "start":   1,
         "sort":    sort
     }
-    response = requests.get(url, headers=headers, params=params)
-    if response.status_code == 200:
-        return response.json().get("items", [])
+    res = requests.get(url, headers=headers, params=params)
+    if res.status_code == 200:
+        return res.json().get("items", [])
     else:
         try:
-            err_msg = response.json().get("errorMessage", "")
+            errmsg = res.json().get("errorMessage", "")
         except:
-            err_msg = ""
-        st.error(f"지역 검색 API 오류 ({response.status_code}): {err_msg}")
+            errmsg = ""
+        st.error(f"네이버 지역 검색 오류 ({res.status_code}): {errmsg}")
         return []
 
 
 # ---------------------------------------------------
-# 5. 네이버 블로그 후기 검색 함수
+# 5. 네이버 블로그 글 수 조회 함수
 # ---------------------------------------------------
-@st.cache_data(ttl=3600, show_spinner=False)
-def search_blog_reviews(query: str, display: int = 2):
+@st.cache_data(ttl=1800, show_spinner=False)
+def get_blog_count(keyword: str) -> int:
+    """
+    “keyword 후기” 로 블로그 검색 시 total 값을 가져와서
+    블로그 게시글 수(언급량)를 리턴
+    """
     if not NAVER_CLIENT_ID or not NAVER_CLIENT_SECRET:
-        return []
+        return 0
 
     url = "https://openapi.naver.com/v1/search/blog.json"
     headers = {
@@ -79,44 +83,16 @@ def search_blog_reviews(query: str, display: int = 2):
         "X-Naver-Client-Secret": NAVER_CLIENT_SECRET
     }
     params = {
-        "query":   f"{query} 후기",
-        "display": display,
+        "query":   f"{keyword} 후기",
+        "display": 1,    # 실제 게시물은 하나만 받아도 total을 쓸 수 있음
         "sort":    "sim"
     }
-    response = requests.get(url, headers=headers, params=params)
-    if response.status_code == 200:
-        return response.json().get("items", [])
-    return []
+    res = requests.get(url, headers=headers, params=params).json()
+    return res.get("total", 0)
 
 
 # ---------------------------------------------------
-# 6. 네이버 이미지 검색 함수
-# ---------------------------------------------------
-@st.cache_data(ttl=3600, show_spinner=False)
-def search_images(query: str, display: int = 1):
-    if not NAVER_CLIENT_ID or not NAVER_CLIENT_SECRET:
-        return []
-
-    url = "https://openapi.naver.com/v1/search/image"
-    headers = {
-        "X-Naver-Client-Id":     NAVER_CLIENT_ID,
-        "X-Naver-Client-Secret": NAVER_CLIENT_SECRET
-    }
-    params = {
-        "query":   query,
-        "display": display,
-        "start":   1,
-        "sort":    "sim",
-        "filter":  "medium"
-    }
-    response = requests.get(url, headers=headers, params=params)
-    if response.status_code == 200:
-        return response.json().get("items", [])
-    return []
-
-
-# ---------------------------------------------------
-# 7. 현재 점심시간(11:00~14:00) 여부 판단 함수
+# 6. 현재 점심시간 여부 판단 함수
 # ---------------------------------------------------
 def is_lunch_open_now() -> bool:
     now_kst = datetime.now(KST).time()
@@ -126,179 +102,118 @@ def is_lunch_open_now() -> bool:
 
 
 # ---------------------------------------------------
-# 8. Streamlit 앱 제목
+# 7. 식당 데이터 가공 & 스코어 계산 함수
 # ---------------------------------------------------
-st.title("🍱 계룡시 점심 맛집 추천기")
+def process_and_score(items: list) -> pd.DataFrame:
+    """
+    - items: 네이버 API items 리스트
+    - FOOD_CATEGORIES 기반으로 필터링
+    - category 필드를 “대분류 > 중분류 > 소분류” 로 분리
+    - 블로그 언급량(blog_count) 추가
+    - 최종 score = blog_count (가중치는 필요 시 조정 가능)
+    """
+    rows = []
+    for item in items:
+        # 1) HTML 태그 제거한 식당명
+        raw_title = item.get("title", "")
+        name = re.sub(r"<[^>]+>", "", raw_title)
+
+        # 2) 주소
+        address = item.get("address", "")
+
+        # 3) category 문자열 → ["대분류", "중분류", "소분류"]
+        cat_str = item.get("category", "")
+        hierarchy = [s.strip() for s in cat_str.split(">")]
+
+        # 4) 대분류만 음식 카테고리인지 필터링
+        if not hierarchy or hierarchy[0] not in FOOD_CATEGORIES:
+            continue
+
+        # 5) 블로그 언급량 조회
+        blog_count = get_blog_count(name)
+
+        # 6) 기본 정보(네이버 제공)를 함께 수집
+        telephone = item.get("telephone", "")
+        link = item.get("link", "")
+
+        # 7) score 계산 (블로그 언급량 그대로 사용)
+        score = blog_count
+
+        rows.append({
+            "name": name,
+            "address": address,
+            "telephone": telephone or "정보 없음",
+            "naver_link": link or "",
+            "category_level1": hierarchy[0],
+            "category_level2": hierarchy[1] if len(hierarchy) >= 2 else "",
+            "category_level3": hierarchy[2] if len(hierarchy) >= 3 else "",
+            "blog_count": blog_count,
+            "score": score
+        })
+
+    # DataFrame으로 변환
+    df = pd.DataFrame(rows)
+    # score 내림차순 정렬
+    df = df.sort_values(by="score", ascending=False).reset_index(drop=True)
+    return df
 
 
 # ---------------------------------------------------
-# 9. 사이드바: 검색 옵션 UI
+# 8. Streamlit UI 시작
 # ---------------------------------------------------
-with st.sidebar:
-    st.header("검색 옵션")
+st.title("🍱 계룡시 인기 맛집 (음식 카테고리만)")
 
-    # 9.1. “아무것도 선택되지 않은 상태”를 위해 안내 문구를 첫 번째 옵션으로 추가
-    category_options = ["— 카테고리 선택 —"] + list(category_images.keys())
-    selected_category = st.selectbox(
-        label="음식 종류",
-        options=category_options,
-        index=0
-    )
+# 8.1. 검색 옵션: “세부 키워드” 입력 (예: “김치찌개”)
+keyword = st.text_input("원하는 메뉴나 키워드를 입력하세요 (선택)", "")
 
-    # 9.2. 선택된 카테고리에 따른 이미지 미리보기
-    if selected_category in category_images:
-        st.markdown("---")
-        st.markdown(
-            f"""
-            <div style="display:flex; flex-direction:column; align-items:center;">
-                <img src="{category_images[selected_category]}" 
-                     style="width:240px; border-radius:15px; 
-                            border:4px solid #4CAF50; 
-                            box-shadow:0 2px 18px rgba(76,175,80,0.10); 
-                            margin-bottom:12px;">
-                <div style="font-size:1.2em; color:#4CAF50; 
-                            font-weight:bold; margin-top:7px;">
-                    {selected_category}
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True
+# 8.2. 결과 개수 선택
+display_count = st.slider("결과 개수", min_value=5, max_value=20, value=10)
+
+# 8.3. 검색 버튼
+if st.button("검색"):
+    if not NAVER_CLIENT_ID or not NAVER_CLIENT_SECRET:
+        st.error(
+            "❗️ 네이버 API 키가 설정되지 않았습니다.\n"
+            "Streamlit Cloud Settings → Secrets에서 "
+            "`NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET`을 등록해 주세요."
         )
-
-    # 9.3. 세부 메뉴 입력 (선택)
-    sub_category = st.text_input("세부 메뉴 (예: 김치찌개, 파스타 등)", "")
-
-    # 9.4. 결과 개수 선택
-    display_count = st.slider(
-        "결과 개수 선택", 
-        min_value=1, 
-        max_value=10, 
-        value=5
-    )
-
-    # 9.5. 정렬 기준 선택
-    sort_option = st.selectbox(
-        "정렬 기준", 
-        ["random", "comment", "review"], 
-        index=0
-    )
-
-    # 9.6. 검색 버튼
-    search_btn = st.button("맛집 검색")
-
-
-# ---------------------------------------------------
-# 10. 검색 버튼 클릭 시 처리
-# ---------------------------------------------------
-if search_btn:
-    # 10.1. 카테고리가 “— 카테고리 선택 —” 일 때 안내 메시지
-    if selected_category not in category_images:
-        st.warning("먼저 '음식 종류'를 선택해 주세요.")
     else:
-        # 10.2. Secret이 누락된 경우에는 더 이상 진행하지 않고 에러 메시지 출력
-        if not NAVER_CLIENT_ID or not NAVER_CLIENT_SECRET:
-            st.error(
-                "❗️ 네이버 API 키가 설정되지 않았습니다.\n"
-                "Streamlit Cloud의 Settings → Secrets 탭에서 "
-                "`NAVER_CLIENT_ID`와 `NAVER_CLIENT_SECRET`을 등록해 주세요."
-            )
+        # 1) 검색어 조합: “계룡시” + keyword(없으면 “맛집”만)
+        if keyword.strip():
+            query = f"계룡시 {keyword.strip()} 맛집"
         else:
-            # 10.3. 쿼리 생성: 예) "계룡시 한식 김치찌개 맛집", sub_category가 비었으면 "계룡시 한식 맛집"
-            if sub_category.strip() == "":
-                query = f"계룡시 {selected_category} 맛집"
-            else:
-                query = f"계룡시 {selected_category} {sub_category} 맛집"
+            query = "계룡시 맛집"
 
-            st.write(f"🔍 검색어: **{query}**")
+        # 2) 네이버 지역 검색 (기본 정렬: 리뷰 수 순)
+        raw_items = search_restaurants(query, display=display_count, sort="review")
 
-            # 10.4. 네이버 지역 검색 API 호출
-            results = search_restaurants(query, display=display_count, sort=sort_option)
+        # 3) 가공 및 스코어 계산 → DataFrame 반환
+        df = process_and_score(raw_items)
 
-            # 10.5. 검색 결과가 없을 때
-            if not results:
-                st.info("🔎 검색 결과가 없습니다. 다른 키워드로 시도해 보세요.")
-            else:
-                # 10.6. 현재 시각(KST) 표시 및 점심시간 여부
-                now_str    = datetime.now(KST).strftime("%Y-%m-%d %H:%M")
-                lunch_flag = is_lunch_open_now()
-                st.write(f"🕒 현재 시각 (KST): {now_str}")
+        if df.empty:
+            st.info("조건에 맞는 음식 카테고리 맛집이 없습니다.")
+        else:
+            # 4) DataFrame 표시 (인터랙티브 테이블)
+            st.dataframe(
+                df[
+                    [
+                        "name", "category_level1", "category_level2", "category_level3",
+                        "blog_count", "score", "telephone", "address", "naver_link"
+                    ]
+                ],
+                use_container_width=True
+            )
 
-                # 10.7. 결과를 2열 그리드로 배치
-                cols = st.columns(2)
-                for idx, item in enumerate(results):
-                    col = cols[idx % 2]
-                    with col:
-                        # 10.7.1. 제목(HTML 태그 제거)
-                        title_raw   = item.get("title", "")
-                        title_clean = re.sub(r"<[^>]+>", "", title_raw)
-                        st.markdown(f"### {title_clean}")
-
-                        # 10.7.2. 주소 및 네이버 지도 링크
-                        address = item.get("address", "")
-                        if address:
-                            encoded_address = quote(address)
-                            map_url = f"https://map.naver.com/v5/search/{encoded_address}"
-                            st.write(f"📍 주소: {address}")
-                            st.markdown(f"🗺️ [지도에서 보기]({map_url})")
-                        else:
-                            st.write("📍 주소 정보 없음")
-
-                        # 10.7.3. 점심시간 운영 여부
-                        if lunch_flag:
-                            st.success("✅ 현재 점심시간 운영 중 (11:00~14:00)")
-                        else:
-                            st.warning("⛔ 점심시간이 아닙니다 (11:00~14:00)")
-
-                        # 10.7.4. 전화번호
-                        phone = item.get("telephone", "")
-                        st.write(f"📞 전화번호: {phone if phone else '정보 없음'}")
-
-                        # 10.7.5. 홈페이지 링크
-                        link = item.get("link", "")
-                        if link:
-                            st.markdown(f"🔗 [홈페이지로 이동]({link})")
-                        else:
-                            st.write("🔗 홈페이지 정보 없음")
-
-                        # 10.7.6. 공유 링크 복사 (지도 URL)
-                        if address:
-                            st.text_input(
-                                "📋 공유 링크 복사", 
-                                value=map_url, 
-                                key=f"share_{idx}"
-                            )
-                        else:
-                            st.text_input(
-                                "📋 공유 링크 복사", 
-                                value="주소 정보 없음", 
-                                key=f"share_{idx}"
-                            )
-
-                        # 10.7.7. 이미지 표시 (네이버 이미지 검색 API)
-                        images = search_images(title_clean)
-                        if images and images[0].get("link"):
-                            # use_column_width 대신 use_container_width=True 로 변경
-                            st.image(
-                                images[0]["link"], 
-                                caption=f"{title_clean} 이미지 예시", 
-                                use_container_width=True
-                            )
-                        else:
-                            st.write("🖼️ 이미지 정보 없음")
-
-                        # 10.7.8. 블로그 후기 보기(확장 패널)
-                        with st.expander("📝 블로그 후기 보기"):
-                            blogs = search_blog_reviews(title_clean)
-                            if not blogs:
-                                st.write("후기 정보 없음")
-                            else:
-                                for blog in blogs:
-                                    blog_title_raw = blog.get("title", "")
-                                    blog_title     = re.sub(r"<[^>]+>", "", blog_title_raw)
-                                    blog_link      = blog.get("link", "")
-                                    if blog_link:
-                                        st.markdown(f"- [{blog_title}]({blog_link})")
-                                    else:
-                                        st.write(f"- {blog_title} (링크 없음)")
-
-                        st.divider()
+            # 5) 상위 5개를 별도 카드 형태로 강조 출력
+            st.markdown("### 🔥 TOP 5 인기 맛집")
+            top5 = df.head(5)
+            for i, row in top5.iterrows():
+                st.markdown(f"#### {i+1}. {row['name']}")
+                st.write(f"• **카테고리(대/중/소)**: {row['category_level1']} / {row['category_level2']} / {row['category_level3']}")
+                st.write(f"• **블로그 언급량**: {row['blog_count']}")
+                st.write(f"• **통합 점수(블로그 언급량 기준)**: {row['score']}")
+                st.write(f"• 📞 전화번호: {row['telephone']}")
+                st.write(f"• 📍 주소: {row['address']}")
+                if row["naver_link"]:
+                    st.markdown(f"• 🔗 [네이버 정보 보기]({row['naver_link']})")
+                st.divider()
