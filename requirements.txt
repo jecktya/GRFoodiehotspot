@@ -2,5 +2,5 @@ streamlit
 requests
 pytz
 streamlit-bokeh-events
-requests
+streamlit-geolocation
 pandas
