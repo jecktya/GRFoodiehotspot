@@ -5,6 +5,7 @@ import pytz
 import pandas as pd
 import math
 from datetime import datetime
+from streamlit.components.v1 import html
 
 # ---------------------------------------------------
 # 0. 페이지 설정 (모바일/PC 모두 친화적)
@@ -72,20 +73,7 @@ FOOD_CATEGORY_HIERARCHY = {
 }
 
 # ---------------------------------------------------
-# 3. IP 기반으로 사용자 대략 위치(위도/경도) 구하기
-# ---------------------------------------------------
-@st.cache_data(ttl=300)
-def fetch_user_location_ip():
-    try:
-        res = requests.get("http://ip-api.com/json/").json()
-        if res.get("status") == "success":
-            return res.get("lat"), res.get("lon")
-    except:
-        pass
-    return None, None
-
-# ---------------------------------------------------
-# 4. 네이버 지역 검색 함수 (맛집 검색)
+# 3. 네이버 지역 검색 함수 (맛집 검색)
 # ---------------------------------------------------
 @st.cache_data(ttl=1800, show_spinner=False)
 def search_restaurants(query: str, display: int = 10, sort: str = "random"):
@@ -109,7 +97,7 @@ def search_restaurants(query: str, display: int = 10, sort: str = "random"):
         return []
 
 # ---------------------------------------------------
-# 5. 네이버 블로그 글 수 조회 함수
+# 4. 네이버 블로그 글 수 조회 함수
 # ---------------------------------------------------
 @st.cache_data(ttl=1800, show_spinner=False)
 def get_blog_count(keyword: str) -> int:
@@ -125,7 +113,7 @@ def get_blog_count(keyword: str) -> int:
     return res.get("total", 0)
 
 # ---------------------------------------------------
-# 6. 두 좌표 사이 거리 계산 (Haversine, 미터)
+# 5. 두 좌표 사이 거리 계산 (Haversine, 미터)
 # ---------------------------------------------------
 def haversine(lat1, lon1, lat2, lon2):
     R = 6371000  # 지구 반지름 (미터)
@@ -138,46 +126,33 @@ def haversine(lat1, lon1, lat2, lon2):
     return R * c
 
 # ---------------------------------------------------
-# 7. 식당 데이터 가공 & 스코어 계산 함수
+# 6. 식당 데이터 가공 & 스코어 계산 함수
 # ---------------------------------------------------
 def process_and_score(items: list, user_lat: float, user_lon: float, radius_m: int,
                       lvl1: str, lvl2: str, lvl3: str):
     rows = []
     for item in items:
-        raw_title = item.get("title", "")
-        name = re.sub(r"<[^>]+>", "", raw_title)
+        name = re.sub(r"<[^>]+>", "", item.get("title", ""))
         address = item.get("address", "")
-
-        # 좌표 (mapy: 위도, mapx: 경도)
         try:
             place_lat = float(item.get("mapy", "0"))
             place_lon = float(item.get("mapx", "0"))
         except:
             continue
-
-        # 거리 계산 및 필터링
         dist = haversine(user_lat, user_lon, place_lat, place_lon)
         if dist > radius_m:
             continue
-
-        # 카테고리 문자열 분리
-        cat_str = item.get("category", "")
-        hierarchy = [s.strip() for s in cat_str.split(">")]
-
-        # 대-중-소 필터링 (빈 문자열이면 모두 허용)
+        hierarchy = [s.strip() for s in item.get("category", "").split(">")]
         if lvl1 and (not hierarchy or hierarchy[0] != lvl1):
             continue
         if lvl2 and (len(hierarchy) < 2 or hierarchy[1] != lvl2):
             continue
         if lvl3 and (len(hierarchy) < 3 or hierarchy[2] != lvl3):
             continue
-
         blog_count = get_blog_count(name)
         telephone = item.get("telephone", "")
         link = item.get("link", "")
-
         score = blog_count
-
         rows.append({
             "name": name,
             "address": address,
@@ -190,30 +165,22 @@ def process_and_score(items: list, user_lat: float, user_lon: float, radius_m: i
             "distance_m": dist,
             "score": score
         })
-
     if not rows:
         return pd.DataFrame()
     df = pd.DataFrame(rows)
-    df = df.sort_values(by="score", ascending=False).reset_index(drop=True)
-    return df
+    return df.sort_values(by="score", ascending=False).reset_index(drop=True)
 
 # ---------------------------------------------------
-# 8. 초기 사용자 위치는 None
+# 7. 기본 UI 구성
 # ---------------------------------------------------
-user_lat = None
-user_lon = None
+st.title("🍱 인기 맛집 검색 (사용자 위치 기반)")
 
-# ---------------------------------------------------
-# 9. Streamlit UI 시작
-# ---------------------------------------------------
-st.title("🍱 인기 맛집 검색 (거리 기반 자동 위치 감지)")
-
-# 9.1. 반경 선택 (기본값 10km)
+# 반경 선택
 radius_option = st.selectbox("검색 반경 선택", ["1KM", "3KM", "5KM", "10KM"], index=3)
 radius_map = {"1KM": 1000, "3KM": 3000, "5KM": 5000, "10KM": 10000}
 radius_m = radius_map[radius_option]
 
-# 9.2. 카테고리 대-중-소 선택 (선택 사항)
+# 카테고리 선택 (선택 사항)
 lvl1 = st.selectbox("대분류 선택 (선택 사항)", [""] + list(FOOD_CATEGORY_HIERARCHY.keys()))
 if lvl1:
     lvl2 = st.selectbox("중분류 선택 (선택 사항)", [""] + list(FOOD_CATEGORY_HIERARCHY[lvl1].keys()))
@@ -221,35 +188,58 @@ else:
     lvl2 = ""
 if lvl1 and lvl2:
     subs = FOOD_CATEGORY_HIERARCHY[lvl1][lvl2]
-    if subs:
-        lvl3 = st.selectbox("소분류 선택 (선택 사항)", [""] + subs)
-    else:
-        lvl3 = ""
+    lvl3 = st.selectbox("소분류 선택 (선택 사항)", [""] + subs) if subs else ""
 else:
     lvl3 = ""
 
-# 9.3. 추가 키워드 입력 (선택)
-keyword = st.text_input("추가 키워드 입력 (예: 순두부, 김치찌개 등)")
+# 추가 키워드 입력
+keyword = st.text_input("추가 키워드 입력 (선택)")
 
-# 9.4. 결과 개수 선택
+# 결과 개수 선택
 display_count = st.slider("최대 결과 개수", min_value=5, max_value=30, value=10)
 
-# 9.5. “검색” 버튼
+# ---------------------------------------------------
+# 8. 검색 버튼
+# ---------------------------------------------------
 if st.button("검색"):
-    # 9.5.1. IP 기반으로 대략적 위치 가져오기
-    try:
-        res = requests.get("http://ip-api.com/json/").json()
-        if res.get("status") == "success":
-            user_lat, user_lon = res.get("lat"), res.get("lon")
-    except:
-        pass
-
-    # 위치가 없으면 알림
-    if user_lat is None or user_lon is None:
-        st.error("❗️ 사용자 위치를 얻을 수 없습니다.")
+    params = st.query_params
+    # 위치 정보 없으면 사용자 위치 요청
+    if "lat" not in params or "lon" not in params:
+        js = """
+        <script>
+        if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(
+                (pos) => {
+                    const lat = pos.coords.latitude;
+                    const lon = pos.coords.longitude;
+                    const { protocol, host, pathname } = window.location;
+                    const newUrl = `${protocol}//${host}${pathname}?lat=${lat}&lon=${lon}`;
+                    window.parent.location.href = newUrl;
+                },
+                (err) => {
+                    window.parent.postMessage({type: "GEO_FAILED"}, "*");
+                }
+            );
+        } else {
+            window.parent.postMessage({type: "GEO_NOT_SUPPORTED"}, "*");
+        }
+        </script>
+        """
+        html(js, height=0)
+        st.info("🔔 위치 권한을 허용해 주세요.")
         st.stop()
 
-    # 9.5.2. 검색어 조합: (lvl3 or lvl2 or lvl1 or keyword) + 맛집
+    # 쿼리 파라미터에서 위치 가져오기
+    try:
+        user_lat = float(params["lat"][0])
+        user_lon = float(params["lon"][0])
+    except:
+        st.error("❗️ 위치 정보를 가져올 수 없습니다.")
+        st.stop()
+
+    st.write(f"🔍 감지된 위치: 위도 {user_lat:.6f}, 경도 {user_lon:.6f}")
+
+    # 검색어 조합
     terms = []
     if lvl3:
         terms.append(lvl3)
@@ -262,26 +252,22 @@ if st.button("검색"):
     terms.append("맛집")
     query = " ".join(terms)
 
-    # 9.5.3. 네이버 지역 검색 (정렬: random)
+    # 네이버 지역 검색
     raw_items = search_restaurants(query, display=display_count, sort="random")
 
-    # 9.5.4. 가공 및 스코어 계산 (거리 필터 포함)
+    # 데이터 가공 및 거리 필터
     df = process_and_score(raw_items, user_lat, user_lon, radius_m, lvl1, lvl2, lvl3)
 
     if df.empty:
         st.info("조건에 맞는 맛집이 없습니다.")
     else:
-        # 9.5.5. DataFrame 표시
         st.dataframe(
-            df[
-                [
-                    "name", "category_level1", "category_level2", "category_level3",
-                    "blog_count", "distance_m", "score", "telephone", "address", "naver_link"
-                ]
-            ],
+            df[[
+                "name", "category_level1", "category_level2", "category_level3",
+                "blog_count", "distance_m", "score", "telephone", "address", "naver_link"
+            ]],
             use_container_width=True
         )
-        # 9.5.6. 상위 5개 카드 형태로 출력
         st.markdown("### 🔥 TOP 5")
         top5 = df.head(5)
         for i, row in top5.iterrows():
