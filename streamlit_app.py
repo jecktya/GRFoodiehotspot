@@ -5,7 +5,6 @@ import pytz
 import pandas as pd
 import math
 from datetime import datetime
-from streamlit.components.v1 import html
 
 # ---------------------------------------------------
 # 0. 페이지 설정 (모바일/PC 모두 친화적)
@@ -23,12 +22,7 @@ except KeyError:
     NAVER_CLIENT_SECRET = None
 
 # ---------------------------------------------------
-# 2. 서울(KST) 시간대 설정 (사용 안 함만 정의)
-# ---------------------------------------------------
-KST = pytz.timezone("Asia/Seoul")
-
-# ---------------------------------------------------
-# 3. 음식 카테고리 대-중-소 계층 구조 사전
+# 2. 음식 카테고리 대-중-소 계층 구조 사전
 # ---------------------------------------------------
 FOOD_CATEGORY_HIERARCHY = {
     "한식": {
@@ -76,6 +70,19 @@ FOOD_CATEGORY_HIERARCHY = {
         "호프/요리주점": []
     }
 }
+
+# ---------------------------------------------------
+# 3. IP 기반으로 사용자 대략 위치(위도/경도) 구하기
+# ---------------------------------------------------
+@st.cache_data(ttl=300)
+def fetch_user_location_ip():
+    try:
+        res = requests.get("http://ip-api.com/json/").json()
+        if res.get("status") == "success":
+            return res.get("lat"), res.get("lon")
+    except:
+        pass
+    return None, None
 
 # ---------------------------------------------------
 # 4. 네이버 지역 검색 함수 (맛집 검색)
@@ -229,57 +236,20 @@ display_count = st.slider("최대 결과 개수", min_value=5, max_value=30, val
 
 # 9.5. “검색” 버튼
 if st.button("검색"):
-    # 9.5.1. 위치가 아직 없으면 권한 요청
+    # 9.5.1. IP 기반으로 대략적 위치 가져오기
+    try:
+        res = requests.get("http://ip-api.com/json/").json()
+        if res.get("status") == "success":
+            user_lat, user_lon = res.get("lat"), res.get("lon")
+    except:
+        pass
+
+    # 위치가 없으면 알림
     if user_lat is None or user_lon is None:
-        # 모바일/PC 브라우저에 위치 권한 요청용 JS (부모 창 전체 리디렉션)
-        js = """
-        <script>
-        if (navigator.geolocation) {
-            navigator.geolocation.getCurrentPosition(
-                (pos) => {
-                    const lat = pos.coords.latitude;
-                    const lon = pos.coords.longitude;
-                    const { protocol, host, pathname } = window.location;
-                    const newUrl = `${protocol}//${host}${pathname}?lat=${lat}&lon=${lon}`;
-                    window.parent.location.href = newUrl;
-                },
-                (err) => {
-                    window.parent.postMessage({type: "GEO_FAILED"}, "*");
-                }
-            );
-        } else {
-            window.parent.postMessage({type: "GEO_NOT_SUPPORTED"}, "*");
-        }
-        </script>
-        """
-        html(js, height=0)
-        st.info("🔔 위치 권한을 허용해 주세요.")
+        st.error("❗️ 사용자 위치를 얻을 수 없습니다.")
         st.stop()
 
-    # 9.5.2. 쿼리 파라미터에 lat, lon이 있으면 가져옴
-    params = st.query_params
-    if "lat" in params and "lon" in params:
-        try:
-            user_lat = float(params["lat"][0])
-            user_lon = float(params["lon"][0])
-        except:
-            user_lat, user_lon = None, None
-
-    # 9.5.3. 위치 아직 없으면 IP 기반으로 폴백
-    if user_lat is None or user_lon is None:
-        try:
-            res = requests.get("http://ip-api.com/json/").json()
-            if res.get("status") == "success":
-                user_lat, user_lon = res.get("lat"), res.get("lon")
-        except:
-            pass
-
-    # 위치가 없으면 종료
-    if user_lat is None or user_lon is None:
-        st.error("❗️ 사용자 위치를 얻을 수 없습니다. 위치 권한을 허용했는지 확인하세요.")
-        st.stop()
-
-    # 9.5.4. 검색어 조합: (lvl3 or lvl2 or lvl1 or keyword) + 맛집
+    # 9.5.2. 검색어 조합: (lvl3 or lvl2 or lvl1 or keyword) + 맛집
     terms = []
     if lvl3:
         terms.append(lvl3)
@@ -292,16 +262,16 @@ if st.button("검색"):
     terms.append("맛집")
     query = " ".join(terms)
 
-    # 9.5.5. 네이버 지역 검색 (정렬: random)
+    # 9.5.3. 네이버 지역 검색 (정렬: random)
     raw_items = search_restaurants(query, display=display_count, sort="random")
 
-    # 9.5.6. 가공 및 스코어 계산 (거리 필터 포함)
+    # 9.5.4. 가공 및 스코어 계산 (거리 필터 포함)
     df = process_and_score(raw_items, user_lat, user_lon, radius_m, lvl1, lvl2, lvl3)
 
     if df.empty:
         st.info("조건에 맞는 맛집이 없습니다.")
     else:
-        # 9.5.7. DataFrame 표시
+        # 9.5.5. DataFrame 표시
         st.dataframe(
             df[
                 [
@@ -311,7 +281,7 @@ if st.button("검색"):
             ],
             use_container_width=True
         )
-        # 9.5.8. 상위 5개 카드 형태로 출력
+        # 9.5.6. 상위 5개 카드 형태로 출력
         st.markdown("### 🔥 TOP 5")
         top5 = df.head(5)
         for i, row in top5.iterrows():
@@ -322,5 +292,5 @@ if st.button("검색"):
             st.write(f"• 📞 전화번호: {row['telephone']}")
             st.write(f"• 📍 주소: {row['address']}")
             if row["naver_link"]:
-                st.markdown(f"• 🔗 [네이버 정보 보기]( {row['naver_link']} )")
+                st.markdown(f"• 🔗 [네이버 정보 보기]({row['naver_link']})")
             st.divider()
