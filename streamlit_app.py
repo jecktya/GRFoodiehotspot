@@ -4,11 +4,12 @@ import re
 import pytz
 import pandas as pd
 import math
-import json
 from datetime import datetime
+from urllib.parse import urlencode
+from streamlit.components.v1 import html
 
 # ---------------------------------------------------
-# 0. 페이지 설정 (모바일 친화적)
+# 0. 페이지 설정 (모바일/PC 모두 친화적)
 # ---------------------------------------------------
 st.set_page_config(layout="centered")
 
@@ -80,33 +81,14 @@ FOOD_CATEGORY_HIERARCHY = {
 
 
 # ---------------------------------------------------
-# 4. 브라우저 Geolocation API로 사용자 위치(위도/경도) 구하기
+# 4. IP 기반으로 사용자 대략 위치(위도/경도) 구하기
 # ---------------------------------------------------
-def fetch_user_location_js():
-    """
-    JavaScript를 통해 브라우저의 Geolocation API를 호출하여
-    위도 경도를 문자열 형태(JSON)로 반환받습니다.
-    """
-    js_code = """
-    <script>
-    (async () => {
-      try {
-        const pos = await new Promise((res, rej) =>
-          navigator.geolocation.getCurrentPosition(res, rej)
-        );
-        const coords = { lat: pos.coords.latitude, lon: pos.coords.longitude };
-        document.write(JSON.stringify(coords));
-      } catch (e) {
-        document.write(JSON.stringify({ error: "Denied" }));
-      }
-    })();
-    </script>
-    """
-    result = st.components.v1.html(js_code, height=0)
+@st.cache_data(ttl=300)
+def fetch_user_location_ip():
     try:
-        loc_data = json.loads(result)
-        if "lat" in loc_data and "lon" in loc_data:
-            return loc_data["lat"], loc_data["lon"]
+        res = requests.get("http://ip-api.com/json/").json()
+        if res.get("status") == "success":
+            return res.get("lat"), res.get("lon")
     except:
         pass
     return None, None
@@ -117,9 +99,6 @@ def fetch_user_location_js():
 # ---------------------------------------------------
 @st.cache_data(ttl=1800, show_spinner=False)
 def search_restaurants(query: str, display: int = 10, sort: str = "review"):
-    """
-    - sort: "random", "comment", "review", "distance"
-    """
     if not NAVER_CLIENT_ID or not NAVER_CLIENT_SECRET:
         return []
 
@@ -142,7 +121,7 @@ def search_restaurants(query: str, display: int = 10, sort: str = "review"):
             errmsg = res.json().get("errorMessage", "")
         except:
             errmsg = ""
-        st.error(f"네이버 지역 검색 오류 ({res.status_code}): {errmsg}")
+        st.error(f"❗️ 네이버 지역 검색 오류 ({res.status_code}): {errmsg}")
         return []
 
 
@@ -151,10 +130,6 @@ def search_restaurants(query: str, display: int = 10, sort: str = "review"):
 # ---------------------------------------------------
 @st.cache_data(ttl=1800, show_spinner=False)
 def get_blog_count(keyword: str) -> int:
-    """
-    “keyword 후기” 로 블로그 검색 시 total 값을 가져와서
-    블로그 게시글 수(언급량)를 리턴
-    """
     if not NAVER_CLIENT_ID or not NAVER_CLIENT_SECRET:
         return 0
 
@@ -182,7 +157,7 @@ def haversine(lat1, lon1, lat2, lon2):
     d_phi = math.radians(lat2 - lat1)
     d_lambda = math.radians(lon2 - lon1)
 
-    a = math.sin(d_phi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(d_lambda / 2) ** 2
+    a = math.sin(d_phi / 2)**2 + math.cos(phi1) * math.cos(phi2) * math.sin(d_lambda / 2)**2
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
     return R * c
 
@@ -192,21 +167,13 @@ def haversine(lat1, lon1, lat2, lon2):
 # ---------------------------------------------------
 def process_and_score(items: list, user_lat: float, user_lon: float, radius_m: int,
                       lvl1: str, lvl2: str, lvl3: str):
-    """
-    - items: 네이버 API items 리스트
-    - FOOD_CATEGORY_HIERARCHY 기반으로 필터링 (선택 사항)
-    - category 필드를 “대분류 > 중분류 > 소분류” 로 분리
-    - 블로그 언급량(blog_count) 추가
-    - user_lat/user_lon + radius_m에 따라 거리(dist) 필터링
-    - score = blog_count
-    """
     rows = []
     for item in items:
         raw_title = item.get("title", "")
         name = re.sub(r"<[^>]+>", "", raw_title)
         address = item.get("address", "")
 
-        # 좌표 (mapy: 위도, mapx: 경도)
+        # 위도/경도 (mapy: 위도, mapx: 경도)
         try:
             place_lat = float(item.get("mapy", "0"))
             place_lon = float(item.get("mapx", "0"))
@@ -218,7 +185,7 @@ def process_and_score(items: list, user_lat: float, user_lon: float, radius_m: i
         if dist > radius_m:
             continue
 
-        # category 문자열 → ["대분류", "중분류", "소분류"]
+        # 카테고리 문자열 분리
         cat_str = item.get("category", "")
         hierarchy = [s.strip() for s in cat_str.split(">")]
 
@@ -258,24 +225,60 @@ def process_and_score(items: list, user_lat: float, user_lon: float, radius_m: i
 
 
 # ---------------------------------------------------
-# 9. Streamlit UI 시작
+# 9. 사용자 위치 감지 로직 (모바일 우선, 실패 시 IP 기반)
 # ---------------------------------------------------
-st.title("🍱 인기 맛집 검색 (모바일용, 위치 자동 감지)")
+params = st.experimental_get_query_params()
+if "lat" in params and "lon" in params:
+    try:
+        user_lat = float(params["lat"][0])
+        user_lon = float(params["lon"][0])
+    except:
+        user_lat, user_lon = None, None
+else:
+    # 모바일 브라우저 GPS 요청 스크립트
+    js = """
+    <script>
+    if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+            (pos) => {
+                const lat = pos.coords.latitude;
+                const lon = pos.coords.longitude;
+                const search = window.location.search;
+                const hasParams = search.includes("lat=") && search.includes("lon=");
+                if (!hasParams) {
+                    const params = new URLSearchParams(search);
+                    params.set("lat", lat);
+                    params.set("lon", lon);
+                    window.location.search = params.toString();
+                }
+            },
+            (err) => {
+                // 실패 시 아무것도 하지 않으면 IP 기반으로 자동 폴백
+            }
+        );
+    }
+    </script>
+    """
+    html(js, height=0)
+    user_lat, user_lon = fetch_user_location_ip()
 
-# 9.1. 브라우저 Geolocation API를 통해 사용자 위치 자동 감지
-user_lat, user_lon = fetch_user_location_js()
+# ---------------------------------------------------
+# 10. Streamlit UI 시작
+# ---------------------------------------------------
+st.title("🍱 인기 맛집 검색 (거리 기반 자동 위치 감지)")
+
 if user_lat is None or user_lon is None:
-    st.error("❗️ 위치 권한이 필요합니다. 모바일 브라우저가 위치 액세스를 허용했는지 확인하세요.")
+    st.error("❗️ 사용자 위치를 얻을 수 없습니다. 모바일에서 위치 권한을 허용했는지, 또는 인터넷 연결을 확인해주세요.")
     st.stop()
 else:
-    st.write(f"🔍 현재 위치: 위도 {user_lat:.6f}, 경도 {user_lon:.6f}")
+    st.write(f"🔍 감지된 위치: 위도 {user_lat:.6f}, 경도 {user_lon:.6f}")
 
-# 9.2. 반경 선택 (기본값 10km)
+# 10.1. 반경 선택 (기본값 10km)
 radius_option = st.selectbox("검색 반경 선택", ["1KM", "3KM", "5KM", "10KM"], index=3)
 radius_map = {"1KM": 1000, "3KM": 3000, "5KM": 5000, "10KM": 10000}
 radius_m = radius_map[radius_option]
 
-# 9.3. 카테고리 대-중-소 선택 (선택 사항)
+# 10.2. 카테고리 대-중-소 선택 (선택 사항)
 lvl1 = st.selectbox("대분류 선택 (선택 사항)", [""] + list(FOOD_CATEGORY_HIERARCHY.keys()))
 if lvl1:
     lvl2 = st.selectbox("중분류 선택 (선택 사항)", [""] + list(FOOD_CATEGORY_HIERARCHY[lvl1].keys()))
@@ -290,13 +293,13 @@ if lvl1 and lvl2:
 else:
     lvl3 = ""
 
-# 9.4. 추가 키워드 입력 (선택)
+# 10.3. 추가 키워드 입력 (선택)
 keyword = st.text_input("추가 키워드 입력 (예: 순두부, 김치찌개 등)")
 
-# 9.5. 결과 개수 선택
+# 10.4. 결과 개수 선택
 display_count = st.slider("최대 결과 개수", min_value=5, max_value=30, value=10)
 
-# 9.6. “검색” 버튼
+# 10.5. “검색” 버튼
 if st.button("검색"):
     if not NAVER_CLIENT_ID or not NAVER_CLIENT_SECRET:
         st.error(
@@ -305,7 +308,7 @@ if st.button("검색"):
             "`NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET`을 등록해 주세요."
         )
     else:
-        # 1) 검색어 조합: (lvl3 or lvl2 or lvl1 or keyword) + 맛집
+        # 검색어 조합: (lvl3 or lvl2 or lvl1 or keyword) + 맛집
         terms = []
         if lvl3:
             terms.append(lvl3)
@@ -318,16 +321,16 @@ if st.button("검색"):
         terms.append("맛집")
         query = " ".join(terms)
 
-        # 2) 네이버 지역 검색 (정렬: 리뷰 수 순)
+        # 네이버 지역 검색 (정렬: 리뷰 수 순)
         raw_items = search_restaurants(query, display=display_count, sort="review")
 
-        # 3) 가공 및 스코어 계산 (거리 필터 포함)
+        # 가공 및 스코어 계산 (거리 필터 포함)
         df = process_and_score(raw_items, user_lat, user_lon, radius_m, lvl1, lvl2, lvl3)
 
         if df.empty:
             st.info("조건에 맞는 맛집이 없습니다.")
         else:
-            # 4) DataFrame 표시
+            # DataFrame 표시
             st.dataframe(
                 df[
                     [
@@ -337,7 +340,7 @@ if st.button("검색"):
                 ],
                 use_container_width=True
             )
-            # 5) 상위 5개 카드 형태로 출력
+            # 상위 5개 카드 형태로 출력
             st.markdown("### 🔥 TOP 5")
             top5 = df.head(5)
             for i, row in top5.iterrows():
