@@ -23,7 +23,7 @@ except KeyError:
     NAVER_CLIENT_SECRET = None
 
 # ---------------------------------------------------
-# 2. 서울(KST) 시간대 설정
+# 2. 서울(KST) 시간대 설정 (사용 안 함만 정의)
 # ---------------------------------------------------
 KST = pytz.timezone("Asia/Seoul")
 
@@ -82,23 +82,14 @@ FOOD_CATEGORY_HIERARCHY = {
 # ---------------------------------------------------
 @st.cache_data(ttl=1800, show_spinner=False)
 def search_restaurants(query: str, display: int = 10, sort: str = "random"):
-    """
-    - sort: "random", "comment", "review", "distance"
-    """
     if not NAVER_CLIENT_ID or not NAVER_CLIENT_SECRET:
         return []
-
     url = "https://openapi.naver.com/v1/search/local.json"
     headers = {
         "X-Naver-Client-Id":     NAVER_CLIENT_ID,
         "X-Naver-Client-Secret": NAVER_CLIENT_SECRET
     }
-    params = {
-        "query":   query,
-        "display": display,
-        "start":   1,
-        "sort":    sort
-    }
+    params = {"query": query, "display": display, "start": 1, "sort": sort}
     res = requests.get(url, headers=headers, params=params)
     if res.status_code == 200:
         return res.json().get("items", [])
@@ -117,17 +108,12 @@ def search_restaurants(query: str, display: int = 10, sort: str = "random"):
 def get_blog_count(keyword: str) -> int:
     if not NAVER_CLIENT_ID or not NAVER_CLIENT_SECRET:
         return 0
-
     url = "https://openapi.naver.com/v1/search/blog.json"
     headers = {
         "X-Naver-Client-Id":     NAVER_CLIENT_ID,
         "X-Naver-Client-Secret": NAVER_CLIENT_SECRET
     }
-    params = {
-        "query":   f"{keyword} 후기",
-        "display": 1,
-        "sort":    "sim"
-    }
+    params = {"query": f"{keyword} 후기", "display": 1, "sort": "sim"}
     res = requests.get(url, headers=headers, params=params).json()
     return res.get("total", 0)
 
@@ -140,7 +126,6 @@ def haversine(lat1, lon1, lat2, lon2):
     phi2 = math.radians(lat2)
     d_phi = math.radians(lat2 - lat1)
     d_lambda = math.radians(lon2 - lon1)
-
     a = math.sin(d_phi / 2)**2 + math.cos(phi1) * math.cos(phi2) * math.sin(d_lambda / 2)**2
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
     return R * c
@@ -156,7 +141,7 @@ def process_and_score(items: list, user_lat: float, user_lon: float, radius_m: i
         name = re.sub(r"<[^>]+>", "", raw_title)
         address = item.get("address", "")
 
-        # 위도/경도 (mapy: 위도, mapx: 경도)
+        # 좌표 (mapy: 위도, mapx: 경도)
         try:
             place_lat = float(item.get("mapy", "0"))
             place_lon = float(item.get("mapx", "0"))
@@ -201,63 +186,20 @@ def process_and_score(items: list, user_lat: float, user_lon: float, radius_m: i
 
     if not rows:
         return pd.DataFrame()
-
     df = pd.DataFrame(rows)
     df = df.sort_values(by="score", ascending=False).reset_index(drop=True)
     return df
 
 # ---------------------------------------------------
-# 8. 사용자 위치 감지 로직 (모바일 우선)
+# 8. 초기 사용자 위치는 None
 # ---------------------------------------------------
-params = st.query_params
-if "lat" in params and "lon" in params:
-    try:
-        user_lat = float(params["lat"][0])
-        user_lon = float(params["lon"][0])
-    except:
-        user_lat, user_lon = None, None
-else:
-    # 모바일/PC 브라우저에 위치 권한 요청용 JS
-    js = """
-    <script>
-    if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(
-            (pos) => {
-                const lat = pos.coords.latitude;
-                const lon = pos.coords.longitude;
-                const search = window.location.search;
-                const params = new URLSearchParams(search);
-                if (!params.has("lat") || !params.has("lon")) {
-                    params.set("lat", lat);
-                    params.set("lon", lon);
-                    window.location.search = params.toString();
-                }
-            },
-            (err) => {
-                // 위치 권한 거부 시 안내
-                window.parent.postMessage({type: "GEO_FAILED"}, "*");
-            }
-        );
-    } else {
-        window.parent.postMessage({type: "GEO_NOT_SUPPORTED"}, "*");
-    }
-    </script>
-    """
-    html(js, height=0)
-    st.info("🔔 위치 권한을 허용해 주세요.")
-    # 위치 권한이 허용되거나 거부될 때까지 여기서 멈춥니다
-    st.stop()
+user_lat = None
+user_lon = None
 
 # ---------------------------------------------------
 # 9. Streamlit UI 시작
 # ---------------------------------------------------
 st.title("🍱 인기 맛집 검색 (거리 기반 자동 위치 감지)")
-
-if user_lat is None or user_lon is None:
-    st.error("❗️ 사용자 위치를 얻을 수 없습니다. 위치 권한을 허용했는지 확인하세요.")
-    st.stop()
-else:
-    st.write(f"🔍 감지된 위치: 위도 {user_lat:.6f}, 경도 {user_lon:.6f}")
 
 # 9.1. 반경 선택 (기본값 10km)
 radius_option = st.selectbox("검색 반경 선택", ["1KM", "3KM", "5KM", "10KM"], index=3)
@@ -287,55 +229,98 @@ display_count = st.slider("최대 결과 개수", min_value=5, max_value=30, val
 
 # 9.5. “검색” 버튼
 if st.button("검색"):
-    if not NAVER_CLIENT_ID or not NAVER_CLIENT_SECRET:
-        st.error(
-            "❗️ 네이버 API 키가 설정되지 않았습니다.\n"
-            "Streamlit Cloud Settings → Secrets에서 "
-            "`NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET`을 등록해 주세요."
-        )
+    # 9.5.1. 위치가 아직 없으면 권한 요청
+    if user_lat is None or user_lon is None:
+        # 모바일/PC 브라우저에 위치 권한 요청용 JS (부모 창 전체 리디렉션)
+        js = """
+        <script>
+        if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(
+                (pos) => {
+                    const lat = pos.coords.latitude;
+                    const lon = pos.coords.longitude;
+                    const { protocol, host, pathname } = window.location;
+                    const newUrl = `${protocol}//${host}${pathname}?lat=${lat}&lon=${lon}`;
+                    window.parent.location.href = newUrl;
+                },
+                (err) => {
+                    window.parent.postMessage({type: "GEO_FAILED"}, "*");
+                }
+            );
+        } else {
+            window.parent.postMessage({type: "GEO_NOT_SUPPORTED"}, "*");
+        }
+        </script>
+        """
+        html(js, height=0)
+        st.info("🔔 위치 권한을 허용해 주세요.")
+        st.stop()
+
+    # 9.5.2. 쿼리 파라미터에 lat, lon이 있으면 가져옴
+    params = st.query_params
+    if "lat" in params and "lon" in params:
+        try:
+            user_lat = float(params["lat"][0])
+            user_lon = float(params["lon"][0])
+        except:
+            user_lat, user_lon = None, None
+
+    # 9.5.3. 위치 아직 없으면 IP 기반으로 폴백
+    if user_lat is None or user_lon is None:
+        try:
+            res = requests.get("http://ip-api.com/json/").json()
+            if res.get("status") == "success":
+                user_lat, user_lon = res.get("lat"), res.get("lon")
+        except:
+            pass
+
+    # 위치가 없으면 종료
+    if user_lat is None or user_lon is None:
+        st.error("❗️ 사용자 위치를 얻을 수 없습니다. 위치 권한을 허용했는지 확인하세요.")
+        st.stop()
+
+    # 9.5.4. 검색어 조합: (lvl3 or lvl2 or lvl1 or keyword) + 맛집
+    terms = []
+    if lvl3:
+        terms.append(lvl3)
+    elif lvl2:
+        terms.append(lvl2)
+    elif lvl1:
+        terms.append(lvl1)
+    if keyword.strip():
+        terms.append(keyword.strip())
+    terms.append("맛집")
+    query = " ".join(terms)
+
+    # 9.5.5. 네이버 지역 검색 (정렬: random)
+    raw_items = search_restaurants(query, display=display_count, sort="random")
+
+    # 9.5.6. 가공 및 스코어 계산 (거리 필터 포함)
+    df = process_and_score(raw_items, user_lat, user_lon, radius_m, lvl1, lvl2, lvl3)
+
+    if df.empty:
+        st.info("조건에 맞는 맛집이 없습니다.")
     else:
-        # 검색어 조합: (lvl3 or lvl2 or lvl1 or keyword) + 맛집
-        terms = []
-        if lvl3:
-            terms.append(lvl3)
-        elif lvl2:
-            terms.append(lvl2)
-        elif lvl1:
-            terms.append(lvl1)
-        if keyword.strip():
-            terms.append(keyword.strip())
-        terms.append("맛집")
-        query = " ".join(terms)
-
-        # 네이버 지역 검색 (정렬: random)
-        raw_items = search_restaurants(query, display=display_count, sort="random")
-
-        # 가공 및 스코어 계산 (거리 필터 포함)
-        df = process_and_score(raw_items, user_lat, user_lon, radius_m, lvl1, lvl2, lvl3)
-
-        if df.empty:
-            st.info("조건에 맞는 맛집이 없습니다.")
-        else:
-            # DataFrame 표시
-            st.dataframe(
-                df[
-                    [
-                        "name", "category_level1", "category_level2", "category_level3",
-                        "blog_count", "distance_m", "score", "telephone", "address", "naver_link"
-                    ]
-                ],
-                use_container_width=True
-            )
-            # 상위 5개 카드 형태로 출력
-            st.markdown("### 🔥 TOP 5")
-            top5 = df.head(5)
-            for i, row in top5.iterrows():
-                st.markdown(f"#### {i+1}. {row['name']}")
-                st.write(f"• **카테고리**: {row['category_level1']} / {row['category_level2']} / {row['category_level3']}")
-                st.write(f"• **거리**: {row['distance_m']:.0f} m")
-                st.write(f"• **블로그 언급량**: {row['blog_count']}")
-                st.write(f"• 📞 전화번호: {row['telephone']}")
-                st.write(f"• 📍 주소: {row['address']}")
-                if row["naver_link"]:
-                    st.markdown(f"• 🔗 [네이버 정보 보기]({row['naver_link']})")
-                st.divider()
+        # 9.5.7. DataFrame 표시
+        st.dataframe(
+            df[
+                [
+                    "name", "category_level1", "category_level2", "category_level3",
+                    "blog_count", "distance_m", "score", "telephone", "address", "naver_link"
+                ]
+            ],
+            use_container_width=True
+        )
+        # 9.5.8. 상위 5개 카드 형태로 출력
+        st.markdown("### 🔥 TOP 5")
+        top5 = df.head(5)
+        for i, row in top5.iterrows():
+            st.markdown(f"#### {i+1}. {row['name']}")
+            st.write(f"• **카테고리**: {row['category_level1']} / {row['category_level2']} / {row['category_level3']}")
+            st.write(f"• **거리**: {row['distance_m']:.0f} m")
+            st.write(f"• **블로그 언급량**: {row['blog_count']}")
+            st.write(f"• 📞 전화번호: {row['telephone']}")
+            st.write(f"• 📍 주소: {row['address']}")
+            if row["naver_link"]:
+                st.markdown(f"• 🔗 [네이버 정보 보기]( {row['naver_link']} )")
+            st.divider()
