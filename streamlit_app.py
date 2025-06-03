@@ -71,7 +71,7 @@ def get_blog_count(keyword: str) -> int:
         return 0
     url = "https://openapi.naver.com/v1/search/blog.json"
     headers = {
-        "X-Naver-Client-Id": NAVER_CLIENT_ID,
+        "X-Naver-Client-Id":     NAVER_CLIENT_ID,
         "X-Naver-Client-Secret": NAVER_CLIENT_SECRET
     }
     params = {"query": f"{keyword} 후기", "display": 1, "sort": "sim"}
@@ -172,18 +172,6 @@ if user_lat == 0.0 and user_lon == 0.0:
     st.markdown("**현재 위치:** (허용되지 않음 / IP 확인 중)")
 else:
     st.markdown(f"**현재 위치:** 위도 {user_lat:.6f}, 경도 {user_lon:.6f}")
-
-# “앱을 새 창으로 열기” 링크 (탑레벨 컨텍스트에서 GPS 허용 유도)
-app_url = st.get_option("browser.address") or ""
-if not app_url:
-    # 로컬 실행 시
-    root_url = "http://localhost:8501"
-else:
-    root_url = app_url
-st.markdown(
-    f"[💡 새 창에서 전체 화면으로 열기](#){'{target=\"_blank\"}' if False else ''}  \n"
-    f"※ 새 창(탑 레벨)에서 열면 브라우저 위치 권한 요청이 정상 동작할 수 있습니다."
-)
 
 # ----------------------------------------
 # 10. UI – 검색 옵션
