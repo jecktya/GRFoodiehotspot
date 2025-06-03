@@ -1,43 +1,67 @@
 import streamlit as st
-from streamlit.components.v1 import html
+from bokeh.models import CustomJS
+from streamlit_bokeh_events import streamlit_bokeh_events
 
 st.set_page_config(layout="centered")
-st.title("GPS 테스트 페이지")
+st.title("사용자 위치 테스트")
 
-# 1. URL 쿼리에 lat, lon이 없으면 JS로 자동 위치 요청
-params = st.query_params
-if "lat" not in params or "lon" not in params:
+# 세션 상태에 위도/경도 저장용 키 초기화
+if "gps_lat" not in st.session_state:
+    st.session_state["gps_lat"] = None
+if "gps_lon" not in st.session_state:
+    st.session_state["gps_lon"] = None
+
+st.markdown("""
+- 아래 버튼을 누르면 브라우저가 위치 권한을 요청합니다.
+- 허용 시 위도/경도가 화면에 표시됩니다.
+""")
+
+# ----------------------------------------
+# 1. "Get Location" 버튼: JS를 실행해 GPS 요청
+# ----------------------------------------
+if st.button("Get Location"):
     js_code = """
-    <script>
-    if (window.self === window.top) {
-        if (navigator.geolocation) {
-            navigator.geolocation.getCurrentPosition(
-                (pos) => {
-                    const lat = pos.coords.latitude;
-                    const lon = pos.coords.longitude;
-                    const newUrl = window.location.origin + window.location.pathname + `?lat=${lat}&lon=${lon}`;
-                    window.location.replace(newUrl);
-                },
-                (err) => {
-                    console.log("GPS 권한 거부 또는 오류:", err);
-                }
-            );
-        } else {
-            console.log("Geolocation 미지원");
-        }
+    if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+            function(pos) {
+                const lat = pos.coords.latitude;
+                const lon = pos.coords.longitude;
+                document.dispatchEvent(
+                    new CustomEvent("return_geolocation", {detail: {latitude: lat, longitude: lon}})
+                );
+            },
+            function(err) {
+                document.dispatchEvent(new CustomEvent("return_geolocation", {detail: null}));
+            }
+        );
     } else {
-        console.log("iframe 내부이므로 자동 요청 건너뜀");
+        document.dispatchEvent(new CustomEvent("return_geolocation", {detail: null}));
     }
-    </script>
     """
-    html(js_code, height=0)
-    st.write("GPS 정보를 요청 중입니다…")
-    st.stop()
+    # JS 실행 후 'return_geolocation' 이벤트를 기다림
+    result = streamlit_bokeh_events(
+        CustomJS(code=js_code),
+        events="return_geolocation",
+        key="get_location",
+        refresh_on_update=False,
+        override_height=0,
+        debounce_time=100,
+    )
+    if result and "return_geolocation" in result:
+        coords = result["return_geolocation"]
+        if coords:
+            st.session_state["gps_lat"] = coords["latitude"]
+            st.session_state["gps_lon"] = coords["longitude"]
+        else:
+            st.warning("GPS 권한이 없거나 오류가 발생했습니다.")
 
-# 2. 쿼리에 lat, lon이 있으면 표시
-try:
-    lat = float(params.get("lat")[0])
-    lon = float(params.get("lon")[0])
-    st.success(f"위도: {lat:.6f}, 경도: {lon:.6f}")
-except:
-    st.error("위치 정보를 파싱하지 못했습니다.")
+# ----------------------------------------
+# 2. 확보된 좌표 표시
+# ----------------------------------------
+lat = st.session_state["gps_lat"]
+lon = st.session_state["gps_lon"]
+
+if lat is not None and lon is not None:
+    st.success(f"위도: {lat:.6f}   |   경도: {lon:.6f}")
+else:
+    st.info("아직 위치 정보가 없습니다. 버튼을 눌러 위치를 요청해 주세요.")
