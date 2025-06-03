@@ -1,4 +1,4 @@
 streamlit
 requests
 pytz
-streamlit-geolocation
+streamlit-bokeh-events
