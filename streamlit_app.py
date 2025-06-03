@@ -4,7 +4,13 @@ import re
 import pytz
 import pandas as pd
 import math
+import json
 from datetime import datetime
+
+# ---------------------------------------------------
+# 0. 페이지 설정 (모바일 친화적)
+# ---------------------------------------------------
+st.set_page_config(layout="centered")
 
 # ---------------------------------------------------
 # 1. Streamlit Secrets에서 NAVER API 키 가져오기
@@ -74,7 +80,40 @@ FOOD_CATEGORY_HIERARCHY = {
 
 
 # ---------------------------------------------------
-# 4. 네이버 지역 검색 함수 (맛집 검색)
+# 4. 브라우저 Geolocation API로 사용자 위치(위도/경도) 구하기
+# ---------------------------------------------------
+def fetch_user_location_js():
+    """
+    JavaScript를 통해 브라우저의 Geolocation API를 호출하여
+    위도 경도를 문자열 형태(JSON)로 반환받습니다.
+    """
+    js_code = """
+    <script>
+    (async () => {
+      try {
+        const pos = await new Promise((res, rej) =>
+          navigator.geolocation.getCurrentPosition(res, rej)
+        );
+        const coords = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+        document.write(JSON.stringify(coords));
+      } catch (e) {
+        document.write(JSON.stringify({ error: "Denied" }));
+      }
+    })();
+    </script>
+    """
+    result = st.components.v1.html(js_code, height=0)
+    try:
+        loc_data = json.loads(result)
+        if "lat" in loc_data and "lon" in loc_data:
+            return loc_data["lat"], loc_data["lon"]
+    except:
+        pass
+    return None, None
+
+
+# ---------------------------------------------------
+# 5. 네이버 지역 검색 함수 (맛집 검색)
 # ---------------------------------------------------
 @st.cache_data(ttl=1800, show_spinner=False)
 def search_restaurants(query: str, display: int = 10, sort: str = "review"):
@@ -108,7 +147,7 @@ def search_restaurants(query: str, display: int = 10, sort: str = "review"):
 
 
 # ---------------------------------------------------
-# 5. 네이버 블로그 글 수 조회 함수
+# 6. 네이버 블로그 글 수 조회 함수
 # ---------------------------------------------------
 @st.cache_data(ttl=1800, show_spinner=False)
 def get_blog_count(keyword: str) -> int:
@@ -134,7 +173,7 @@ def get_blog_count(keyword: str) -> int:
 
 
 # ---------------------------------------------------
-# 6. 두 좌표 사이 거리 계산 (Haversine, 미터)
+# 7. 두 좌표 사이 거리 계산 (Haversine, 미터)
 # ---------------------------------------------------
 def haversine(lat1, lon1, lat2, lon2):
     R = 6371000  # 지구 반지름 (미터)
@@ -143,18 +182,19 @@ def haversine(lat1, lon1, lat2, lon2):
     d_phi = math.radians(lat2 - lat1)
     d_lambda = math.radians(lon2 - lon1)
 
-    a = math.sin(d_phi/2)**2 + math.cos(phi1)*math.cos(phi2)*math.sin(d_lambda/2)**2
+    a = math.sin(d_phi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(d_lambda / 2) ** 2
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
     return R * c
 
 
 # ---------------------------------------------------
-# 7. 식당 데이터 가공 & 스코어 계산 함수
+# 8. 식당 데이터 가공 & 스코어 계산 함수
 # ---------------------------------------------------
-def process_and_score(items: list, user_lat: float, user_lon: float, radius_m: int):
+def process_and_score(items: list, user_lat: float, user_lon: float, radius_m: int,
+                      lvl1: str, lvl2: str, lvl3: str):
     """
     - items: 네이버 API items 리스트
-    - FOOD_CATEGORY_HIERARCHY 기반으로 필터링 (선택 안 했으면 전체)
+    - FOOD_CATEGORY_HIERARCHY 기반으로 필터링 (선택 사항)
     - category 필드를 “대분류 > 중분류 > 소분류” 로 분리
     - 블로그 언급량(blog_count) 추가
     - user_lat/user_lon + radius_m에 따라 거리(dist) 필터링
@@ -162,46 +202,38 @@ def process_and_score(items: list, user_lat: float, user_lon: float, radius_m: i
     """
     rows = []
     for item in items:
-        # 1) HTML 태그 제거한 식당명
         raw_title = item.get("title", "")
         name = re.sub(r"<[^>]+>", "", raw_title)
-
-        # 2) 주소
         address = item.get("address", "")
 
-        # 3) 좌표 (mapy: 위도, mapx: 경도)
+        # 좌표 (mapy: 위도, mapx: 경도)
         try:
             place_lat = float(item.get("mapy", "0"))
             place_lon = float(item.get("mapx", "0"))
         except:
             continue
 
-        # 4) 거리 계산 및 필터링
+        # 거리 계산 및 필터링
         dist = haversine(user_lat, user_lon, place_lat, place_lon)
         if dist > radius_m:
             continue
 
-        # 5) category 문자열 → ["대분류", "중분류", "소분류"]
+        # category 문자열 → ["대분류", "중분류", "소분류"]
         cat_str = item.get("category", "")
         hierarchy = [s.strip() for s in cat_str.split(">")]
 
-        # 6) 대분류/중분류/소분류 필터링 (None이면 모든 카테고리 허용)
-        if selected_level1 != "— 선택 —":
-            if not hierarchy or hierarchy[0] != selected_level1:
-                continue
-            if selected_level2 and hierarchy[1] != selected_level2:
-                continue
-            if selected_level3 and hierarchy[2] != selected_level3:
-                continue
+        # 대-중-소 필터링 (빈 문자열이면 패스)
+        if lvl1 and (not hierarchy or hierarchy[0] != lvl1):
+            continue
+        if lvl2 and (len(hierarchy) < 2 or hierarchy[1] != lvl2):
+            continue
+        if lvl3 and (len(hierarchy) < 3 or hierarchy[2] != lvl3):
+            continue
 
-        # 7) 블로그 언급량 조회
         blog_count = get_blog_count(name)
-
-        # 8) 기본 정보
         telephone = item.get("telephone", "")
         link = item.get("link", "")
 
-        # 9) score 계산 (블로그 언급량)
         score = blog_count
 
         rows.append({
@@ -226,43 +258,45 @@ def process_and_score(items: list, user_lat: float, user_lon: float, radius_m: i
 
 
 # ---------------------------------------------------
-# 8. Streamlit UI 시작
+# 9. Streamlit UI 시작
 # ---------------------------------------------------
-st.title("🍱 인기 맛집 검색 (거리 기반)")
+st.title("🍱 인기 맛집 검색 (모바일용, 위치 자동 감지)")
 
-# 8.1. 사용자 GPS 입력 (필수)
-st.markdown("### 현재 위치 좌표 입력")
-user_lat = st.number_input("위도 (latitude)", format="%.6f")
-user_lon = st.number_input("경도 (longitude)", format="%.6f")
+# 9.1. 브라우저 Geolocation API를 통해 사용자 위치 자동 감지
+user_lat, user_lon = fetch_user_location_js()
+if user_lat is None or user_lon is None:
+    st.error("❗️ 위치 권한이 필요합니다. 모바일 브라우저가 위치 액세스를 허용했는지 확인하세요.")
+    st.stop()
+else:
+    st.write(f"🔍 현재 위치: 위도 {user_lat:.6f}, 경도 {user_lon:.6f}")
 
-# 8.2. 반경 선택 (기본값 10km)
-radius_option = st.selectbox("검색 반경 선택",
-                             ["1KM", "3KM", "5KM", "10KM"], index=3)
+# 9.2. 반경 선택 (기본값 10km)
+radius_option = st.selectbox("검색 반경 선택", ["1KM", "3KM", "5KM", "10KM"], index=3)
 radius_map = {"1KM": 1000, "3KM": 3000, "5KM": 5000, "10KM": 10000}
 radius_m = radius_map[radius_option]
 
-# 8.3. 카테고리 대-중-소 선택 (선택 사항)
-selected_level1 = st.selectbox("대분류 선택", ["— 선택 —"] + list(FOOD_CATEGORY_HIERARCHY.keys()))
-if selected_level1 in FOOD_CATEGORY_HIERARCHY:
-    selected_level2 = st.selectbox("중분류 선택", [""] + list(FOOD_CATEGORY_HIERARCHY[selected_level1].keys()))
+# 9.3. 카테고리 대-중-소 선택 (선택 사항)
+lvl1 = st.selectbox("대분류 선택 (선택 사항)", [""] + list(FOOD_CATEGORY_HIERARCHY.keys()))
+if lvl1:
+    lvl2 = st.selectbox("중분류 선택 (선택 사항)", [""] + list(FOOD_CATEGORY_HIERARCHY[lvl1].keys()))
 else:
-    selected_level2 = ""
-if selected_level1 in FOOD_CATEGORY_HIERARCHY and selected_level2 in FOOD_CATEGORY_HIERARCHY[selected_level1]:
-    subs = FOOD_CATEGORY_HIERARCHY[selected_level1][selected_level2]
+    lvl2 = ""
+if lvl1 and lvl2:
+    subs = FOOD_CATEGORY_HIERARCHY[lvl1][lvl2]
     if subs:
-        selected_level3 = st.selectbox("소분류 선택", [""] + subs)
+        lvl3 = st.selectbox("소분류 선택 (선택 사항)", [""] + subs)
     else:
-        selected_level3 = ""
+        lvl3 = ""
 else:
-    selected_level3 = ""
+    lvl3 = ""
 
-# 8.4. 추가 키워드 입력 (선택)
+# 9.4. 추가 키워드 입력 (선택)
 keyword = st.text_input("추가 키워드 입력 (예: 순두부, 김치찌개 등)")
 
-# 8.5. 결과 개수 선택
+# 9.5. 결과 개수 선택
 display_count = st.slider("최대 결과 개수", min_value=5, max_value=30, value=10)
 
-# 8.6. “검색” 버튼
+# 9.6. “검색” 버튼
 if st.button("검색"):
     if not NAVER_CLIENT_ID or not NAVER_CLIENT_SECRET:
         st.error(
@@ -270,17 +304,15 @@ if st.button("검색"):
             "Streamlit Cloud Settings → Secrets에서 "
             "`NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET`을 등록해 주세요."
         )
-    elif user_lat == 0 or user_lon == 0:
-        st.error("❗️ 위치 검색을 위해 위도와 경도를 모두 입력해주세요.")
     else:
-        # 1) 검색어 조합: “(level2 or level1 or keyword) + 맛집”
+        # 1) 검색어 조합: (lvl3 or lvl2 or lvl1 or keyword) + 맛집
         terms = []
-        if selected_level3:
-            terms.append(selected_level3)
-        elif selected_level2:
-            terms.append(selected_level2)
-        elif selected_level1 != "— 선택 —":
-            terms.append(selected_level1)
+        if lvl3:
+            terms.append(lvl3)
+        elif lvl2:
+            terms.append(lvl2)
+        elif lvl1:
+            terms.append(lvl1)
         if keyword.strip():
             terms.append(keyword.strip())
         terms.append("맛집")
@@ -290,7 +322,7 @@ if st.button("검색"):
         raw_items = search_restaurants(query, display=display_count, sort="review")
 
         # 3) 가공 및 스코어 계산 (거리 필터 포함)
-        df = process_and_score(raw_items, user_lat, user_lon, radius_m)
+        df = process_and_score(raw_items, user_lat, user_lon, radius_m, lvl1, lvl2, lvl3)
 
         if df.empty:
             st.info("조건에 맞는 맛집이 없습니다.")
