@@ -189,7 +189,7 @@ def process_and_score(items: list, user_lat: float, user_lon: float, radius_m: i
         cat_str = item.get("category", "")
         hierarchy = [s.strip() for s in cat_str.split(">")]
 
-        # 대-중-소 필터링 (빈 문자열이면 패스)
+        # 대-중-소 필터링 (빈 문자열이면 모두 허용)
         if lvl1 and (not hierarchy or hierarchy[0] != lvl1):
             continue
         if lvl2 and (len(hierarchy) < 2 or hierarchy[1] != lvl2):
@@ -227,7 +227,7 @@ def process_and_score(items: list, user_lat: float, user_lon: float, radius_m: i
 # ---------------------------------------------------
 # 9. 사용자 위치 감지 로직 (모바일 우선, 실패 시 IP 기반)
 # ---------------------------------------------------
-params = st.experimental_get_query_params()
+params = st.query_params
 if "lat" in params and "lon" in params:
     try:
         user_lat = float(params["lat"][0])
@@ -244,8 +244,9 @@ else:
                 const lat = pos.coords.latitude;
                 const lon = pos.coords.longitude;
                 const search = window.location.search;
-                const hasParams = search.includes("lat=") && search.includes("lon=");
-                if (!hasParams) {
+                const hasLat = search.includes("lat=");
+                const hasLon = search.includes("lon=");
+                if (!hasLat || !hasLon) {
                     const params = new URLSearchParams(search);
                     params.set("lat", lat);
                     params.set("lon", lon);
