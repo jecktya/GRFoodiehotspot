@@ -3,8 +3,7 @@ import requests
 import re
 import pandas as pd
 import math
-from bokeh.models import CustomJS
-from streamlit_bokeh_events import streamlit_bokeh_events
+from streamlit.components.v1 import html
 
 # ----------------------------------------
 # 1. 페이지 설정
@@ -12,7 +11,7 @@ from streamlit_bokeh_events import streamlit_bokeh_events
 st.set_page_config(layout="centered")
 
 # ----------------------------------------
-# 2. NAVER API 키 (secrets.toml에 설정)
+# 2. NAVER API 키 (secrets.toml에 저장)
 # ----------------------------------------
 try:
     NAVER_CLIENT_ID = st.secrets["NAVER_CLIENT_ID"]
@@ -25,7 +24,7 @@ except KeyError:
 # 3. 거리 계산 함수 (Haversine)
 # ----------------------------------------
 def haversine(lat1, lon1, lat2, lon2):
-    R = 6371000
+    R = 6371000  # 지구 반지름 (미터)
     phi1, phi2 = math.radians(lat1), math.radians(lat2)
     d_phi = math.radians(lat2 - lat1)
     d_lambda = math.radians(lon2 - lon1)
@@ -34,7 +33,7 @@ def haversine(lat1, lon1, lat2, lon2):
     return R * c
 
 # ----------------------------------------
-# 4. 네이버 지역 검색
+# 4. 네이버 지역 검색 (API 호출)
 # ----------------------------------------
 @st.cache_data(ttl=1800)
 def search_restaurants(query: str, display: int = 10, sort: str = "distance"):
@@ -42,7 +41,7 @@ def search_restaurants(query: str, display: int = 10, sort: str = "distance"):
         return []
     url = "https://openapi.naver.com/v1/search/local.json"
     headers = {
-        "X-Naver-Client-Id":     NAVER_CLIENT_ID,
+        "X-Naver-Client-Id": NAVER_CLIENT_ID,
         "X-Naver-Client-Secret": NAVER_CLIENT_SECRET
     }
     params = {"query": query, "display": display, "start": 1, "sort": sort}
@@ -55,7 +54,7 @@ def search_restaurants(query: str, display: int = 10, sort: str = "distance"):
         return []
 
 # ----------------------------------------
-# 5. 블로그 언급 수 조회
+# 5. 블로그 언급 수 조회 (스코어링용)
 # ----------------------------------------
 @st.cache_data(ttl=1800)
 def get_blog_count(keyword: str) -> int:
@@ -63,16 +62,15 @@ def get_blog_count(keyword: str) -> int:
         return 0
     url = "https://openapi.naver.com/v1/search/blog.json"
     headers = {
-        "X-Naver-Client-Id":     NAVER_CLIENT_ID,
+        "X-Naver-Client-Id": NAVER_CLIENT_ID,
         "X-Naver-Client-Secret": NAVER_CLIENT_SECRET
     }
     params = {"query": f"{keyword} 후기", "display": 1, "sort": "sim"}
     res = requests.get(url, headers=headers, params=params).json()
     return res.get("total", 0)
 
-
 # ----------------------------------------
-# 6. 결과 가공 & 스코어링
+# 6. 결과 가공 & 거리 필터 & 점수 매기기
 # ----------------------------------------
 def process_and_score(items: list, user_lat: float, user_lon: float, radius_m: int):
     rows = []
@@ -84,15 +82,12 @@ def process_and_score(items: list, user_lat: float, user_lon: float, radius_m: i
             place_lon = float(item.get("mapx", "0"))
         except:
             continue
-
         dist = haversine(user_lat, user_lon, place_lat, place_lon)
         if dist > radius_m:
             continue
-
         blog_count = get_blog_count(name)
         telephone = item.get("telephone", "")
         link = item.get("link", "")
-
         rows.append({
             "name": name,
             "address": address,
@@ -102,120 +97,103 @@ def process_and_score(items: list, user_lat: float, user_lon: float, radius_m: i
             "distance_m": dist,
             "score": blog_count
         })
-
     if not rows:
         return pd.DataFrame()
     df = pd.DataFrame(rows)
     return df.sort_values(by="score", ascending=False).reset_index(drop=True)
 
-
 # ----------------------------------------
 # 7. 세션 상태 초기화 (위도/경도 키)
 # ----------------------------------------
-if "gps_lat" not in st.session_state:
-    st.session_state["gps_lat"] = None
-if "gps_lon" not in st.session_state:
-    st.session_state["gps_lon"] = None
+if "user_lat" not in st.session_state:
+    st.session_state["user_lat"] = None
+if "user_lon" not in st.session_state:
+    st.session_state["user_lon"] = None
 
 # ----------------------------------------
-# 8. 화면 UI
+# 8. URL 쿼리(param)에 lat, lon 없으면 탑레벨에서 JS 실행해 자동 위치 요청
 # ----------------------------------------
-st.title("🍱 인기 맛집 검색 (GPS + IP 폴백)")
-
-st.markdown(
+params = st.query_params
+if "lat" not in params or "lon" not in params:
+    # 페이지 로드 시 즉시 실행되는 JS 코드 (탑레벨에서만 위치권한 요청)
+    js = """
+    <script>
+    // iframe 내부가 아니면(=탑레벨일 때) 바로 위치 권한 요청
+    if (window.self === window.top) {
+        if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(
+                function(pos) {
+                    const lat = pos.coords.latitude;
+                    const lon = pos.coords.longitude;
+                    const newUrl = window.location.origin + window.location.pathname + `?lat=${lat}&lon=${lon}`;
+                    window.location.replace(newUrl);
+                },
+                function(err) {
+                    console.log("GPS 권한 거부 또는 오류:", err);
+                }
+            );
+        } else {
+            console.log("Geolocation not supported.");
+        }
+    } else {
+        console.log("iframe 내부이므로 자동 위치 요청을 건너뜀.");
+    }
+    </script>
     """
-    1. 아래 버튼을 눌러 브라우저가 위치 권한을 요청하면 ‘허용’을 눌러 주세요.  
-    2. 만약 GPS를 받지 못하면 IP 기반 위치로 대체하고,  
-       IP 위치가 한국 범위를 벗어나면 수동 입력을 요청합니다.
-    """
-)
+    html(js, height=0)
 
-# 검색 조건 (반경, 키워드, 개수)
-radius_option = st.selectbox("검색 반경", ["1KM","3KM","5KM","10KM"], index=3)
-radius_map = {"1KM":1000, "3KM":3000, "5KM":5000, "10KM":10000}
+# ----------------------------------------
+# 9. URL 쿼리에서 lat, lon 파싱 → 세션에 저장
+# ----------------------------------------
+if "lat" in params and "lon" in params:
+    try:
+        st.session_state["user_lat"] = float(params["lat"][0])
+        st.session_state["user_lon"] = float(params["lon"][0])
+    except:
+        st.session_state["user_lat"] = None
+        st.session_state["user_lon"] = None
+
+# ----------------------------------------
+# 10. 확보된 위치 표시 혹은 IP 기반 폴백
+# ----------------------------------------
+user_lat = st.session_state["user_lat"]
+user_lon = st.session_state["user_lon"]
+
+if user_lat is None or user_lon is None:
+    # IP 기반 위치 시도 (한국 범위 확인)
+    try:
+        resp = requests.get("http://ip-api.com/json/").json()
+        if resp.get("status") == "success":
+            lat_ip, lon_ip = resp["lat"], resp["lon"]
+            if 33.0 <= lat_ip <= 43.0 and 124.0 <= lon_ip <= 132.0:
+                user_lat, user_lon = lat_ip, lon_ip
+                st.info(f"IP 기반 위치: 위도 {user_lat:.6f}, 경도 {user_lon:.6f}")
+    except:
+        pass
+
+if user_lat is None or user_lon is None:
+    st.error("❗️ 위치를 자동으로 받아오지 못했습니다. 앱을 탑레벨(iframe 없이)으로 열거나, 브라우저 위치 권한을 확인하세요.")
+    st.stop()
+else:
+    st.success(f"현재 위치: 위도 {user_lat:.6f}, 경도 {user_lon:.6f}")
+
+# ----------------------------------------
+# 11. 검색 옵션 설정 (반경, 키워드, 개수)
+# ----------------------------------------
+radius_option = st.selectbox("검색 반경 선택", ["1KM","3KM","5KM","10KM"], index=3)
+radius_map = {"1KM":1000,"3KM":3000,"5KM":5000,"10KM":10000}
 radius_m = radius_map[radius_option]
 
 keyword = st.text_input("추가 키워드 (선택)")
 display_count = st.slider("최대 결과 개수", min_value=5, max_value=30, value=10)
 
 # ----------------------------------------
-# 9. GPS 위치 가져오기 버튼
-# ----------------------------------------
-if st.button("GPS로 위치 가져오기"):
-    js_code = """
-    if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(
-            (pos) => {
-                const lat = pos.coords.latitude;
-                const lon = pos.coords.longitude;
-                document.dispatchEvent(
-                    new CustomEvent("return_geolocation", {detail: {latitude: lat, longitude: lon}})
-                );
-            },
-            (err) => {
-                document.dispatchEvent(new CustomEvent("return_geolocation", {detail: null}));
-            }
-        );
-    } else {
-        document.dispatchEvent(new CustomEvent("return_geolocation", {detail: null}));
-    }
-    """
-    result = streamlit_bokeh_events(
-        CustomJS(code=js_code),
-        events="return_geolocation",
-        key="get_location",
-        refresh_on_update=False,
-        override_height=0,
-        debounce_time=100,
-    )
-    if result and "return_geolocation" in result:
-        coords = result["return_geolocation"]
-        if coords:
-            st.session_state["gps_lat"] = coords["latitude"]
-            st.session_state["gps_lon"] = coords["longitude"]
-        else:
-            st.warning("GPS 권한이 없거나 실패했습니다. IP 기반 위치를 시도합니다.")
-
-# ----------------------------------------
-# 10. 확보된 위치 or IP 폴백 or 수동 입력
-# ----------------------------------------
-user_lat = st.session_state["gps_lat"]
-user_lon = st.session_state["gps_lon"]
-
-if user_lat is None or user_lon is None:
-    # IP 기반으로 한국 내 위치 확인
-    try:
-        resp = requests.get("http://ip-api.com/json/").json()
-        if resp.get("status") == "success":
-            lat_ip, lon_ip = resp["lat"], resp["lon"]
-            # 한국 범위: 위도 33~43, 경도 124~132
-            if 33 <= lat_ip <= 43 and 124 <= lon_ip <= 132:
-                user_lat, user_lon = lat_ip, lon_ip
-                st.info(f"IP 기반 위치: 위도 {user_lat:.6f}, 경도 {user_lon:.6f}")
-            else:
-                st.warning("IP 기반 위치가 한국 범위를 벗어났습니다. 직접 입력해 주세요.")
-                user_lat = st.number_input("위도 직접 입력", format="%.6f", key="manual_lat")
-                user_lon = st.number_input("경도 직접 입력", format="%.6f", key="manual_lon")
-                if user_lat == 0.0 and user_lon == 0.0:
-                    st.stop()
-        else:
-            raise Exception
-    except:
-        st.warning("IP 기반 위치를 가져오지 못했습니다. 직접 입력해 주세요.")
-        user_lat = st.number_input("위도 직접 입력", format="%.6f", key="manual_lat2")
-        user_lon = st.number_input("경도 직접 입력", format="%.6f", key="manual_lon2")
-        if user_lat == 0.0 and user_lon == 0.0:
-            st.stop()
-else:
-    st.success(f"GPS로 감지된 위치: 위도 {user_lat:.6f}, 경도 {user_lon:.6f}")
-
-# ----------------------------------------
-# 11. 맛집 검색 버튼
+# 12. 맛집 검색 버튼 & 로직
 # ----------------------------------------
 if st.button("맛집 검색"):
     st.write(f"🔍 위치 기준: 위도 {user_lat:.6f}, 경도 {user_lon:.6f}")
 
-    # 검색어 조합
+    # 검색어 조합 (예: “맛집” + 추가 키워드)
     terms = []
     if keyword.strip():
         terms.append(keyword.strip())
@@ -228,8 +206,10 @@ if st.button("맛집 검색"):
     if df.empty:
         st.info("조건에 맞는 맛집이 없습니다.")
     else:
-        st.dataframe(df[["name","address","telephone","blog_count","distance_m","score","naver_link"]],
-                     use_container_width=True)
+        st.dataframe(
+            df[["name","address","telephone","blog_count","distance_m","score","naver_link"]],
+            use_container_width=True
+        )
         st.markdown("### 🔥 TOP 5")
         for i, row in df.head(5).iterrows():
             st.markdown(f"#### {i+1}. {row['name']}")
