@@ -98,7 +98,10 @@ def fetch_user_location_ip():
 # 5. 네이버 지역 검색 함수 (맛집 검색)
 # ---------------------------------------------------
 @st.cache_data(ttl=1800, show_spinner=False)
-def search_restaurants(query: str, display: int = 10, sort: str = "review"):
+def search_restaurants(query: str, display: int = 10, sort: str = "random"):
+    """
+    - sort: "random", "comment", "review", "distance"
+    """
     if not NAVER_CLIENT_ID or not NAVER_CLIENT_SECRET:
         return []
 
@@ -322,8 +325,8 @@ if st.button("검색"):
         terms.append("맛집")
         query = " ".join(terms)
 
-        # 네이버 지역 검색 (정렬: 리뷰 수 순)
-        raw_items = search_restaurants(query, display=display_count, sort="review")
+        # 네이버 지역 검색 (정렬: random)
+        raw_items = search_restaurants(query, display=display_count, sort="random")
 
         # 가공 및 스코어 계산 (거리 필터 포함)
         df = process_and_score(raw_items, user_lat, user_lon, radius_m, lvl1, lvl2, lvl3)
