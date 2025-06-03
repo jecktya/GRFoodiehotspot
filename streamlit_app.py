@@ -6,7 +6,7 @@ import math
 from streamlit.components.v1 import html
 
 # ----------------------------------------
-# 0. 페이지 설정
+# 페이지 설정
 # ----------------------------------------
 st.set_page_config(layout="centered")
 
@@ -71,7 +71,7 @@ def get_blog_count(keyword: str) -> int:
         return 0
     url = "https://openapi.naver.com/v1/search/blog.json"
     headers = {
-        "X-Naver-Client-Id":     NAVER_CLIENT_ID,
+        "X-Naver-Client-Id": NAVER_CLIENT_ID,
         "X-Naver-Client-Secret": NAVER_CLIENT_SECRET
     }
     params = {"query": f"{keyword} 후기", "display": 1, "sort": "sim"}
@@ -82,11 +82,11 @@ def get_blog_count(keyword: str) -> int:
 # 5. 두 좌표 사이 거리 계산 (Haversine)
 # ----------------------------------------
 def haversine(lat1, lon1, lat2, lon2):
-    R = 6371000  # 미터
+    R = 6371000  # 지구 반지름 (미터)
     phi1, phi2 = math.radians(lat1), math.radians(lat2)
     d_phi = math.radians(lat2 - lat1)
     d_lambda = math.radians(lon2 - lon1)
-    a = math.sin(d_phi/2)**2 + math.cos(phi1)*math.cos(phi2)*math.sin(d_lambda/2)**2
+    a = math.sin(d_phi / 2)**2 + math.cos(phi1) * math.cos(phi2) * math.sin(d_lambda / 2)**2
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
     return R * c
 
@@ -136,28 +136,57 @@ def process_and_score(items: list, user_lat: float, user_lon: float, radius_m: i
     return df.sort_values(by="score", ascending=False).reset_index(drop=True)
 
 # ----------------------------------------
-# 7. 쿼리 파라미터로 전달된 위도/경도 추출
+# 7. 사용자 위치 가져오기 함수 (GPS → IP 폴백)
 # ----------------------------------------
-params = st.query_params
-if "lat" in params and "lon" in params:
+def get_user_location():
+    params = st.query_params
+    # 1) URL 파라미터에 lat, lon 있으면 그걸 사용 (GPS)
+    if "lat" in params and "lon" in params:
+        try:
+            return float(params["lat"][0]), float(params["lon"][0])
+        except:
+            pass
+    # 2) 그렇지 않으면 IP 기반으로 대략 위치
     try:
-        user_lat = float(params["lat"][0])
-        user_lon = float(params["lon"][0])
+        resp = requests.get("http://ip-api.com/json/").json()
+        if resp.get("status") == "success":
+            return resp["lat"], resp["lon"]
     except:
-        user_lat = user_lon = 0.0
-else:
-    user_lat = user_lon = 0.0
+        pass
+    return None, None
 
 # ----------------------------------------
-# 8. UI – 제목 및 현재 위치 표시
+# 8. 현재 사용자 위치
+# ----------------------------------------
+user_lat, user_lon = get_user_location()
+if user_lat is None or user_lon is None:
+    user_lat, user_lon = 0.0, 0.0
+
+# ----------------------------------------
+# 9. UI – 제목 및 현재 위치 표시
 # ----------------------------------------
 st.title("🍱 인기 맛집 검색 (거리 기반)")
 
-# 현재 위치 (초기에는 0.0, 0.0)
-st.markdown(f"**현재 위치:** 위도 {user_lat:.6f}, 경도 {user_lon:.6f}")
+# 위치 표시
+if user_lat == 0.0 and user_lon == 0.0:
+    st.markdown("**현재 위치:** (허용되지 않음 / IP 확인 중)")
+else:
+    st.markdown(f"**현재 위치:** 위도 {user_lat:.6f}, 경도 {user_lon:.6f}")
+
+# “앱을 새 창으로 열기” 링크 (탑레벨 컨텍스트에서 GPS 허용 유도)
+app_url = st.get_option("browser.address") or ""
+if not app_url:
+    # 로컬 실행 시
+    root_url = "http://localhost:8501"
+else:
+    root_url = app_url
+st.markdown(
+    f"[💡 새 창에서 전체 화면으로 열기](#){'{target=\"_blank\"}' if False else ''}  \n"
+    f"※ 새 창(탑 레벨)에서 열면 브라우저 위치 권한 요청이 정상 동작할 수 있습니다."
+)
 
 # ----------------------------------------
-# 9. UI – 검색 옵션
+# 10. UI – 검색 옵션
 # ----------------------------------------
 radius_option = st.selectbox("검색 반경 선택", ["1KM", "3KM", "5KM", "10KM"], index=3)
 radius_map = {"1KM": 1000, "3KM": 3000, "5KM": 5000, "10KM": 10000}
@@ -178,10 +207,10 @@ keyword = st.text_input("추가 키워드 입력 (선택)")
 display_count = st.slider("최대 결과 개수", min_value=5, max_value=30, value=10)
 
 # ----------------------------------------
-# 10. “검색” 버튼 로직
+# 11. “검색” 버튼 로직
 # ----------------------------------------
 if st.button("검색"):
-    # 10.1. 위치 정보가 0.0인 경우에만 권한 요청
+    # 11.1. 사용자 위치가 0.0인 경우 → GPS 요청
     if user_lat == 0.0 and user_lon == 0.0:
         js = """
         <script>
@@ -195,6 +224,7 @@ if st.button("검색"):
                     window.parent.location.href = newUrl;
                 },
                 (err) => {
+                    // 사용자가 거부하면 IP 기반 위치를 그대로 사용
                     window.parent.postMessage({type: "GEO_FAILED"}, "*");
                 }
             );
@@ -204,13 +234,13 @@ if st.button("검색"):
         </script>
         """
         html(js, height=0)
-        st.info("🔔 위치 권한을 허용해 주세요.")
+        st.info("🔔 위치 권한을 허용해 주세요 또는 IP 기반 위치가 사용됩니다.")
         st.stop()
 
-    # 10.2. 위치 정보가 이미 있거나, 쿼리 파라미터로 받아온 경우
+    # 11.2. 위치가 이미 있으면 표시
     st.write(f"🔍 감지된 위치: 위도 {user_lat:.6f}, 경도 {user_lon:.6f}")
 
-    # 10.3. 검색어 조합
+    # 11.3. 검색어 조합
     terms = []
     if lvl3:
         terms.append(lvl3)
@@ -223,10 +253,10 @@ if st.button("검색"):
     terms.append("맛집")
     query = " ".join(terms)
 
-    # 10.4. 네이버 지역 검색
+    # 11.4. 네이버 지역 검색
     raw_items = search_restaurants(query, display=display_count, sort="random")
 
-    # 10.5. 결과 가공 및 거리 필터
+    # 11.5. 결과 가공 및 거리 필터
     df = process_and_score(raw_items, user_lat, user_lon, radius_m, lvl1, lvl2, lvl3)
 
     if df.empty:
