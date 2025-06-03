@@ -10,7 +10,6 @@ import pytz
 category_images = {
     "전체": "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/all.jpg",
     "한식": "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/korean.jpg",
-@@ -16,29 +11,19 @@
     "카페/디저트": "https://raw.githubusercontent.com/jecktya/GRFoodiehotspot/main/food/dessert.jpg"
 }
 
@@ -46,7 +45,6 @@ st.markdown("""
         border-radius: 10px;
         border: 2px solid transparent;
         box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-@@ -55,120 +40,34 @@
         box-shadow: 0 0 15px rgba(76, 175, 80, 0.6);
         transform: scale(1.07);
     }
