@@ -5,7 +5,6 @@ import pytz
 import pandas as pd
 import math
 from datetime import datetime
-from urllib.parse import urlencode
 from streamlit.components.v1 import html
 
 # ---------------------------------------------------
@@ -27,7 +26,6 @@ except KeyError:
 # 2. 서울(KST) 시간대 설정
 # ---------------------------------------------------
 KST = pytz.timezone("Asia/Seoul")
-
 
 # ---------------------------------------------------
 # 3. 음식 카테고리 대-중-소 계층 구조 사전
@@ -79,23 +77,8 @@ FOOD_CATEGORY_HIERARCHY = {
     }
 }
 
-
 # ---------------------------------------------------
-# 4. IP 기반으로 사용자 대략 위치(위도/경도) 구하기
-# ---------------------------------------------------
-@st.cache_data(ttl=300)
-def fetch_user_location_ip():
-    try:
-        res = requests.get("http://ip-api.com/json/").json()
-        if res.get("status") == "success":
-            return res.get("lat"), res.get("lon")
-    except:
-        pass
-    return None, None
-
-
-# ---------------------------------------------------
-# 5. 네이버 지역 검색 함수 (맛집 검색)
+# 4. 네이버 지역 검색 함수 (맛집 검색)
 # ---------------------------------------------------
 @st.cache_data(ttl=1800, show_spinner=False)
 def search_restaurants(query: str, display: int = 10, sort: str = "random"):
@@ -127,9 +110,8 @@ def search_restaurants(query: str, display: int = 10, sort: str = "random"):
         st.error(f"❗️ 네이버 지역 검색 오류 ({res.status_code}): {errmsg}")
         return []
 
-
 # ---------------------------------------------------
-# 6. 네이버 블로그 글 수 조회 함수
+# 5. 네이버 블로그 글 수 조회 함수
 # ---------------------------------------------------
 @st.cache_data(ttl=1800, show_spinner=False)
 def get_blog_count(keyword: str) -> int:
@@ -149,9 +131,8 @@ def get_blog_count(keyword: str) -> int:
     res = requests.get(url, headers=headers, params=params).json()
     return res.get("total", 0)
 
-
 # ---------------------------------------------------
-# 7. 두 좌표 사이 거리 계산 (Haversine, 미터)
+# 6. 두 좌표 사이 거리 계산 (Haversine, 미터)
 # ---------------------------------------------------
 def haversine(lat1, lon1, lat2, lon2):
     R = 6371000  # 지구 반지름 (미터)
@@ -164,9 +145,8 @@ def haversine(lat1, lon1, lat2, lon2):
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
     return R * c
 
-
 # ---------------------------------------------------
-# 8. 식당 데이터 가공 & 스코어 계산 함수
+# 7. 식당 데이터 가공 & 스코어 계산 함수
 # ---------------------------------------------------
 def process_and_score(items: list, user_lat: float, user_lon: float, radius_m: int,
                       lvl1: str, lvl2: str, lvl3: str):
@@ -226,9 +206,8 @@ def process_and_score(items: list, user_lat: float, user_lon: float, radius_m: i
     df = df.sort_values(by="score", ascending=False).reset_index(drop=True)
     return df
 
-
 # ---------------------------------------------------
-# 9. 사용자 위치 감지 로직 (모바일 우선, 실패 시 IP 기반)
+# 8. 사용자 위치 감지 로직 (모바일 우선)
 # ---------------------------------------------------
 params = st.query_params
 if "lat" in params and "lon" in params:
@@ -238,7 +217,7 @@ if "lat" in params and "lon" in params:
     except:
         user_lat, user_lon = None, None
 else:
-    # 모바일 브라우저 GPS 요청 스크립트
+    # 모바일/PC 브라우저에 위치 권한 요청용 JS
     js = """
     <script>
     if (navigator.geolocation) {
@@ -247,42 +226,45 @@ else:
                 const lat = pos.coords.latitude;
                 const lon = pos.coords.longitude;
                 const search = window.location.search;
-                const hasLat = search.includes("lat=");
-                const hasLon = search.includes("lon=");
-                if (!hasLat || !hasLon) {
-                    const params = new URLSearchParams(search);
+                const params = new URLSearchParams(search);
+                if (!params.has("lat") || !params.has("lon")) {
                     params.set("lat", lat);
                     params.set("lon", lon);
                     window.location.search = params.toString();
                 }
             },
             (err) => {
-                // 실패 시 아무것도 하지 않으면 IP 기반으로 자동 폴백
+                // 위치 권한 거부 시 안내
+                window.parent.postMessage({type: "GEO_FAILED"}, "*");
             }
         );
+    } else {
+        window.parent.postMessage({type: "GEO_NOT_SUPPORTED"}, "*");
     }
     </script>
     """
     html(js, height=0)
-    user_lat, user_lon = fetch_user_location_ip()
+    st.info("🔔 위치 권한을 허용해 주세요.")
+    # 위치 권한이 허용되거나 거부될 때까지 여기서 멈춥니다
+    st.stop()
 
 # ---------------------------------------------------
-# 10. Streamlit UI 시작
+# 9. Streamlit UI 시작
 # ---------------------------------------------------
 st.title("🍱 인기 맛집 검색 (거리 기반 자동 위치 감지)")
 
 if user_lat is None or user_lon is None:
-    st.error("❗️ 사용자 위치를 얻을 수 없습니다. 모바일에서 위치 권한을 허용했는지, 또는 인터넷 연결을 확인해주세요.")
+    st.error("❗️ 사용자 위치를 얻을 수 없습니다. 위치 권한을 허용했는지 확인하세요.")
     st.stop()
 else:
     st.write(f"🔍 감지된 위치: 위도 {user_lat:.6f}, 경도 {user_lon:.6f}")
 
-# 10.1. 반경 선택 (기본값 10km)
+# 9.1. 반경 선택 (기본값 10km)
 radius_option = st.selectbox("검색 반경 선택", ["1KM", "3KM", "5KM", "10KM"], index=3)
 radius_map = {"1KM": 1000, "3KM": 3000, "5KM": 5000, "10KM": 10000}
 radius_m = radius_map[radius_option]
 
-# 10.2. 카테고리 대-중-소 선택 (선택 사항)
+# 9.2. 카테고리 대-중-소 선택 (선택 사항)
 lvl1 = st.selectbox("대분류 선택 (선택 사항)", [""] + list(FOOD_CATEGORY_HIERARCHY.keys()))
 if lvl1:
     lvl2 = st.selectbox("중분류 선택 (선택 사항)", [""] + list(FOOD_CATEGORY_HIERARCHY[lvl1].keys()))
@@ -297,13 +279,13 @@ if lvl1 and lvl2:
 else:
     lvl3 = ""
 
-# 10.3. 추가 키워드 입력 (선택)
+# 9.3. 추가 키워드 입력 (선택)
 keyword = st.text_input("추가 키워드 입력 (예: 순두부, 김치찌개 등)")
 
-# 10.4. 결과 개수 선택
+# 9.4. 결과 개수 선택
 display_count = st.slider("최대 결과 개수", min_value=5, max_value=30, value=10)
 
-# 10.5. “검색” 버튼
+# 9.5. “검색” 버튼
 if st.button("검색"):
     if not NAVER_CLIENT_ID or not NAVER_CLIENT_SECRET:
         st.error(
