@@ -27,7 +27,12 @@ if "lat" not in params or "lon" not in params:
     </script>
     """
     html(js, height=0)
-    st.write("위치 요청 중… (탑레벨에서 열어야 합니다)")
+
+    st.markdown(
+        "**앱을 최상위 창에서 열려면 [여기를 클릭](https://grfoodiehotspot.streamlit.app/)**  \n"
+        "※ 탑레벨(iframe 없이)으로 열면 위치 권한 요청이 동작합니다."
+    )
+    st.write("위치 요청 중…")
     st.stop()
 
 # 2. lat, lon 파라미터가 있으면 화면에 표시
